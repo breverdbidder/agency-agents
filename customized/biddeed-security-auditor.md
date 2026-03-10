@@ -54,6 +54,38 @@ You own security for **BidDeed.AI** — a platform serving financial investment 
 - .env files must be in .gitignore (verify on every PR)
 - Firecrawl API key: verify no exposure in Cloudflare Pages build logs
 
+## PAT Rotation: Explicit 90-Day Schedule with Day-75 Alert & Auto-Revocation
+
+```
+Day 0:   New PAT created → record creation date in GitHub Secret PAT_ISSUE_DATE
+Day 1-74: Weekly rotation check passes (no action needed)
+Day 75:  ⚠️  ALERT sent to Telegram: "15 days until PAT auto-revocation"
+Day 76-89: Daily Telegram reminders escalating in urgency
+Day 90:  🔴 AUTO-REVOKE: PAT disabled via GitHub API, pipeline pauses until new PAT created
+```
+
+**Revocation procedure (Day 90)**:
+1. GitHub Actions workflow `pat-rotation-check.yml` detects `PAT_ISSUE_DATE` is 90+ days old
+2. Calls GitHub API `DELETE /user/installations/{PAT_TOKEN_ID}` to disable the token
+3. Pipeline automatically pauses (GitHub Actions will fail with auth error)
+4. Telegram alert sent: "PAT revoked. Create new PAT at: github.com/settings/personal-access-tokens"
+5. Ariel creates new PAT with 90-day expiry, updates `GITHUB_PAT` and `PAT_ISSUE_DATE` secrets
+6. Telegram confirmation: "New PAT confirmed. Pipeline resuming."
+
+**Required GitHub Secrets for rotation enforcement**:
+```
+PAT_ISSUE_DATE  — ISO date when current PAT was created (e.g., 2026-03-10)
+PAT_TOKEN_ID    — GitHub's internal ID for the PAT (not the secret value)
+TELEGRAM_BOT_TOKEN — Alert delivery (stored in GitHub Secrets ONLY)
+TELEGRAM_CHAT_ID   — Ariel's chat ID (stored in GitHub Secrets ONLY)
+```
+
+**Current PAT Status**: PAT1 has NO EXPIRY SET — CRITICAL open item. Remediation:
+1. Go to github.com/settings/personal-access-tokens/fine-grained
+2. Edit PAT1 → set expiration to 90 days from today
+3. Add `PAT_ISSUE_DATE=2026-03-10` to GitHub Secrets
+4. Add `PAT_TOKEN_ID` (visible in PAT URL) to GitHub Secrets
+
 ---
 
 # BidDeed ESF Security Auditor
@@ -176,6 +208,54 @@ Run this checklist every 90 days (next due: June 9, 2026)
 [ ] GitHub Actions: Only SUPABASE_SERVICE_ROLE_KEY in Actions — not in Pages
 ```
 
+## Telegram Alert Credential Security
+
+**RULE**: Telegram bot token and chat ID are HIGH-VALUE secrets — they allow anyone to impersonate BidDeed security alerts. Store ONLY in GitHub Secrets or Supabase Vault.
+
+```
+NEVER:
+  ❌ In .env files (even if in .gitignore — .env files can leak)
+  ❌ In code or config files
+  ❌ In GitHub Actions env: block as plain text
+  ❌ In CLAUDE.md, README, or any documentation
+  ❌ In log output or error messages
+
+ALWAYS:
+  ✅ TELEGRAM_BOT_TOKEN → GitHub Secret (encrypted at rest, injected at runtime)
+  ✅ TELEGRAM_CHAT_ID   → GitHub Secret (Ariel's chat ID, not sensitive but still keep in Secrets)
+  ✅ In Edge Functions  → Supabase Vault (vault.secrets table, pgcrypto encrypted)
+```
+
+```python
+# Secure delivery pattern — used in ALL security alert functions
+import os
+
+def send_security_alert(message: str) -> bool:
+    """Secure Telegram alert. Credentials only from environment."""
+    bot_token = os.environ.get('TELEGRAM_BOT_TOKEN')  # From GitHub Secret
+    chat_id = os.environ.get('TELEGRAM_CHAT_ID')       # From GitHub Secret
+
+    if not bot_token or not chat_id:
+        # SAFE log — never expose the actual values
+        import logging
+        logging.critical("TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID not set in environment")
+        return False
+
+    try:
+        import httpx
+        httpx.post(
+            f"https://api.telegram.org/bot{bot_token}/sendMessage",
+            json={"chat_id": chat_id, "text": f"🔐 BidDeed ESF: {message}"},
+            timeout=10,
+        ).raise_for_status()
+        return True
+    except Exception as e:
+        # Log exception type only — never log token in error
+        import logging
+        logging.error(f"Telegram delivery failed: {type(e).__name__}")
+        return False
+```
+
 ### Security CI/CD Pipeline (BidDeed-Specific)
 
 ```yaml
@@ -282,6 +362,50 @@ def verify_rls():
 
 if __name__ == "__main__":
     verify_rls()
+```
+
+## Setup & Migration
+
+### Required Supabase Tables
+```sql
+-- Tables monitored by this agent (must exist with RLS):
+-- multi_county_auctions  — 9 RLS policies active
+-- user_tiers             — tier enforcement, quota tracking
+-- security_events        — security incident log
+-- audit_log              — append-only audit trail
+-- daily_metrics          — pipeline health data
+
+-- Verify RLS is active on all tables:
+SELECT tablename, COUNT(*) as policy_count
+FROM pg_policies
+WHERE tablename IN ('multi_county_auctions', 'user_tiers', 'security_events', 'audit_log', 'daily_metrics')
+GROUP BY tablename
+ORDER BY tablename;
+-- Expected: each table shows at least 1 policy
+```
+
+### Required Environment Variables
+```bash
+SUPABASE_URL=https://mocerqjnksmhcjzxrewo.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=<from GitHub Secrets — server-side only>
+TELEGRAM_BOT_TOKEN=<from GitHub Secrets>
+TELEGRAM_CHAT_ID=<from GitHub Secrets>
+PAT_ISSUE_DATE=<ISO date of current PAT creation>
+```
+
+### Required Tools
+```bash
+pip install supabase httpx
+npm install -g gitleaks  # or use Docker: docker run --rm zricethezav/gitleaks
+pip install semgrep
+```
+
+### One-Liner Security Test
+```bash
+# Quick ESF health check — verify RLS policies and no obvious secrets
+python scripts/verify_rls.py && \
+gitleaks detect --source . --no-git --quiet && \
+echo "ESF security check: PASSED ✅" || echo "ESF security check: FAILED 🚨"
 ```
 
 ## 🔄 Workflow Process

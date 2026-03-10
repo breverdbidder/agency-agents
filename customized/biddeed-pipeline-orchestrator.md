@@ -244,6 +244,161 @@ class BidDeedPipelineState(TypedDict):
     checkpoint_id: str   # Supabase claude_context_checkpoints.id
 ```
 
+## LangGraph Integration Patterns: Concrete Agent Handoffs
+
+### Pipeline Orchestrator → Data Pipeline Agent (Stages 1-6)
+
+```python
+from langgraph.graph import StateGraph, END
+from typing import TypedDict, Literal
+
+# State transitions: Orchestrator hands off to Data Pipeline Agent
+def route_to_data_pipeline(state: BidDeedPipelineState) -> Literal["data_pipeline", "ml_score", "end"]:
+    """Route based on current stage and gate results."""
+    if state["current_stage"] < 7 and not state.get("stage_6_complete"):
+        return "data_pipeline"
+    elif state["current_stage"] == 7 and state.get("stage_6_complete"):
+        return "ml_score"
+    return "end"
+
+# Orchestrator → Data Pipeline Agent handoff
+async def orchestrator_to_data_pipeline(state: BidDeedPipelineState) -> BidDeedPipelineState:
+    """
+    Orchestrator delegates Bronze/Silver/Gold ETL to Data Pipeline Agent.
+    Passes: county, case_number, auction_date
+    Expects back: silver_record, gold_record (without ml_score), stage results 1-6
+    """
+    try:
+        # Checkpoint before handoff
+        checkpoint_id = await save_checkpoint(state, stage=state["current_stage"])
+        state["checkpoint_id"] = checkpoint_id
+
+        # Call Data Pipeline Agent for stages 1-6
+        pipeline_result = await call_agent(
+            agent_id="biddeed-data-pipeline-agent",
+            payload={
+                "county": state["county"],
+                "case_number": state["case_number"],
+                "auction_date": state["auction_date"],
+                "stages": list(range(1, 7)),
+            },
+            timeout_seconds=300,  # 5 min max for all ETL stages
+        )
+
+        if pipeline_result["status"] == "SUCCESS":
+            state["stage_results"].update(pipeline_result["stage_results"])
+            state["current_stage"] = 6
+            state["stage_6_complete"] = True
+        else:
+            state["errors"].append({
+                "stage": state["current_stage"],
+                "error": pipeline_result.get("error", "Data pipeline failed"),
+                "county": state["county"],
+            })
+            # Log failure to security_events
+            log_security_event(
+                f"Data pipeline failed for {state['county']}/{state['case_number']}: {pipeline_result.get('error')}",
+                severity="HIGH"
+            )
+
+    except Exception as e:
+        state["errors"].append({"stage": "handoff_to_data_pipeline", "error": str(e)})
+
+    return state
+
+# ML Score Agent → Analytics Agent: ML score feeds into analytics dashboard
+async def ml_score_to_analytics_update(state: BidDeedPipelineState) -> BidDeedPipelineState:
+    """
+    After Stage 7 (ML Score), update Analytics Agent's daily_metrics.
+    ML Score Agent produces: ml_score, confidence_interval, decision
+    Analytics Agent consumes: aggregated scores for Dashboard 2 (ML Health)
+    """
+    try:
+        if state.get("ml_score") is not None:
+            # Write to daily_metrics so Analytics Dashboard 2 picks it up
+            supabase.table('daily_metrics').upsert({
+                "run_date": state["auction_date"],
+                "county": state["county"],
+                "ml_score_computed": True,
+                "latest_ml_score": state["ml_score"],
+                "model_version": state["stage_results"].get(7, {}).get("model_version"),
+            }, on_conflict="run_date,county").execute()
+            state["current_stage"] = 7
+    except Exception as e:
+        state["errors"].append({"stage": 7, "error": f"Analytics update failed: {str(e)}"})
+
+    return state
+
+# Identity Agent validates all agent actions via audit_log
+async def identity_agent_validate(state: BidDeedPipelineState, agent_id: str, action: str) -> bool:
+    """
+    Identity Agent validates every consequential pipeline action.
+    Called before: stage transitions, data writes, ML score updates.
+    Returns: True = authorized, False = blocked (logged to security_events)
+    """
+    try:
+        validation = await call_agent(
+            agent_id="biddeed-agent-identity-agent",
+            payload={
+                "requesting_agent": agent_id,
+                "action": action,
+                "resource": f"{state['county']}/{state['case_number']}",
+                "delegation_chain": ["langgraph", agent_id],
+            },
+            timeout_seconds=5,
+        )
+        return validation.get("allowed", False)
+    except Exception as e:
+        log_security_event(
+            f"Identity validation failed for {agent_id}/{action}: {str(e)}",
+            severity="CRITICAL"
+        )
+        return False  # Fail-closed: deny if validation fails
+
+# Build the LangGraph state machine
+def build_pipeline_graph() -> StateGraph:
+    graph = StateGraph(BidDeedPipelineState)
+
+    graph.add_node("data_pipeline", orchestrator_to_data_pipeline)
+    graph.add_node("ml_score", call_ml_score_stage)
+    graph.add_node("decision", compute_decision_stage)
+    graph.add_node("report", generate_report_stage)
+    graph.add_node("archive", archive_to_supabase)
+
+    graph.set_entry_point("data_pipeline")
+    graph.add_conditional_edges("data_pipeline", route_to_data_pipeline)
+    graph.add_edge("ml_score", "decision")
+    graph.add_edge("decision", "report")
+    graph.add_edge("report", "archive")
+    graph.add_edge("archive", END)
+
+    return graph.compile()
+```
+
+### State Transition Diagram
+```
+                    ┌─────────────────────────────────────────────────────┐
+                    │           LangGraph Pipeline Orchestrator            │
+                    │                                                       │
+  START ──► [PRE-FLIGHT] ──► [DATA-PIPELINE-AGENT] ──► [ML-SCORE-AGENT]  │
+                    │         (Stages 1-6: ETL)          (Stage 7: XGB)   │
+                    │              ↓                           ↓           │
+                    │         silver_record              ml_score,ci      │
+                    │              ↓                           ↓           │
+                    │         [DECISION] ──────────────────────►          │
+                    │         Stage 8-9: max_bid, BID/REVIEW/SKIP         │
+                    │              ↓                                       │
+                    │    [REPORT] → [ARCHIVE] → END                       │
+                    │    Stage 10    Stage 12                              │
+                    │         ↓                                            │
+                    │    [ANALYTICS UPDATE] (async, non-blocking)         │
+                    │         Updates daily_metrics for Dashboard 3        │
+                    └─────────────────────────────────────────────────────┘
+
+Identity Agent monitors ALL transitions (audit_log entry per stage)
+Analytics Agent reads daily_metrics after pipeline completes
+```
+
 ### Circuit Breaker Pattern
 ```python
 CIRCUIT_BREAKERS = {
@@ -253,6 +408,186 @@ CIRCUIT_BREAKERS = {
     "realTDM": {"failures": 0, "threshold": 3, "tripped": False},
 }
 # On trip: skip source, log to security_events, alert, continue with partial data
+```
+
+## Error Handling: Try-Catch for Every External Call
+
+**Rule**: Every external API call, database query, and file operation must be wrapped in try-catch with graceful degradation.
+
+```python
+import asyncio
+from typing import Optional
+
+# Pattern: External API call with retry + circuit breaker + graceful degradation
+async def safe_ml_api_call(
+    case_number: str, county: str, judgment_amount: float, plaintiff_type: str,
+    retries: int = 3
+) -> dict:
+    """ML API call with full error handling and graceful degradation."""
+    cb = CIRCUIT_BREAKERS.get("ml_api", {"failures": 0, "threshold": 3, "tripped": False})
+
+    if cb["tripped"]:
+        # Circuit breaker tripped — use historical average as fallback
+        fallback_score = get_historical_avg_score(county, plaintiff_type)
+        log_security_event(
+            f"ML API circuit breaker tripped — using fallback score {fallback_score} for {case_number}",
+            severity="WARNING"
+        )
+        return {"tpp_probability": fallback_score, "decision": "REVIEW", "fallback": True}
+
+    for attempt in range(retries):
+        try:
+            import httpx
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.post(
+                    f"{ML_API_URL}/predict/tpp",
+                    json={
+                        "case_number": case_number,
+                        "county": county,
+                        "judgment_amount": judgment_amount,
+                        "plaintiff_type": plaintiff_type,
+                    }
+                )
+                response.raise_for_status()
+                cb["failures"] = 0  # Reset on success
+                return response.json()
+
+        except httpx.TimeoutException:
+            wait = 5 ** attempt  # 5s, 25s, 125s
+            log_security_event(f"ML API timeout (attempt {attempt+1}/{retries})", severity="WARNING")
+            if attempt < retries - 1:
+                await asyncio.sleep(wait)
+
+        except httpx.HTTPStatusError as e:
+            log_security_event(f"ML API HTTP error {e.response.status_code}", severity="ERROR")
+            cb["failures"] += 1
+            if cb["failures"] >= cb["threshold"]:
+                cb["tripped"] = True
+            break  # Don't retry on 4xx/5xx
+
+        except Exception as e:
+            log_security_event(f"ML API unexpected error: {type(e).__name__}", severity="ERROR")
+            cb["failures"] += 1
+            break
+
+    # All retries exhausted — graceful degradation
+    fallback_score = get_historical_avg_score(county, plaintiff_type)
+    return {
+        "tpp_probability": fallback_score,
+        "decision": "REVIEW",  # Conservative fallback: always REVIEW, never BID
+        "fallback": True,
+        "fallback_reason": "ML API unavailable after retries",
+    }
+
+
+# Pattern: Database query with error handling
+async def safe_supabase_upsert(records: list[dict], table: str = "multi_county_auctions") -> dict:
+    """Database upsert with error handling and retry."""
+    try:
+        result = supabase.table(table).upsert(
+            records,
+            on_conflict="county,case_number",
+            returning="minimal"
+        ).execute()
+        return {"success": True, "upserted": len(records)}
+
+    except Exception as e:
+        log_security_event(
+            f"Supabase upsert failed on {table}: {type(e).__name__}: {str(e)[:200]}",
+            severity="ERROR"
+        )
+        # Try individual inserts as fallback (isolate the bad record)
+        succeeded = 0
+        for record in records:
+            try:
+                supabase.table(table).upsert(record, on_conflict="county,case_number").execute()
+                succeeded += 1
+            except Exception as inner_e:
+                log_security_event(
+                    f"Individual upsert failed: {record.get('case_number', 'unknown')}: {type(inner_e).__name__}",
+                    severity="WARNING"
+                )
+        return {"success": succeeded > 0, "upserted": succeeded, "failed": len(records) - succeeded}
+
+
+# Pattern: File operation with error handling
+def safe_save_report(report_bytes: bytes, case_number: str, county: str) -> Optional[str]:
+    """Save DOCX report with error handling."""
+    import os, tempfile
+    try:
+        output_dir = f"/tmp/reports/{county}"
+        os.makedirs(output_dir, exist_ok=True)
+        filepath = f"{output_dir}/{case_number}.docx"
+        with open(filepath, "wb") as f:
+            f.write(report_bytes)
+        return filepath
+    except PermissionError as e:
+        log_security_event(f"Report save permission denied: {case_number}", severity="ERROR")
+        return None
+    except OSError as e:
+        log_security_event(f"Report save OS error: {case_number}: {str(e)}", severity="ERROR")
+        return None
+    except Exception as e:
+        log_security_event(f"Report save unexpected error: {type(e).__name__}", severity="ERROR")
+        return None
+```
+
+## Setup & Migration
+
+### Required Supabase Tables
+```sql
+-- Tables used by pipeline orchestrator:
+-- multi_county_auctions   — primary auction data (upsert target)
+-- claude_context_checkpoints — pipeline stage checkpoints
+-- security_events          — pipeline health events
+-- daily_metrics            — nightly run summaries
+-- audit_log                — stage transition audit trail
+
+-- Create checkpoint table if not exists:
+CREATE TABLE IF NOT EXISTS claude_context_checkpoints (
+  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  pipeline_run_id text NOT NULL,
+  county text NOT NULL,
+  case_number text NOT NULL,
+  current_stage int NOT NULL,
+  stage_results jsonb DEFAULT '{}',
+  errors jsonb DEFAULT '[]',
+  final_decision text,
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_checkpoint_run_case
+  ON claude_context_checkpoints(pipeline_run_id, county, case_number);
+```
+
+### Required Environment Variables
+```bash
+SUPABASE_URL=https://mocerqjnksmhcjzxrewo.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=<from GitHub Secrets>
+ML_API_URL=<Render FastAPI endpoint, from GitHub Secrets>
+CENSUS_API_KEY=<US Census API key, from GitHub Secrets>
+TELEGRAM_BOT_TOKEN=<from GitHub Secrets>
+TELEGRAM_CHAT_ID=<from GitHub Secrets>
+FIRECRAWL_API_KEY=<from GitHub Secrets, ZoneWise only>
+```
+
+### Required Python Packages
+```bash
+pip install langgraph langchain supabase httpx pydantic python-docx
+```
+
+### One-Liner Test
+```bash
+# Test pipeline can connect to all dependencies
+python -c "
+from supabase import create_client; import os, httpx
+sb = create_client(os.environ['SUPABASE_URL'], os.environ['SUPABASE_SERVICE_ROLE_KEY'])
+count = sb.table('multi_county_auctions').select('case_number', count='exact').limit(1).execute()
+print(f'Auctions in DB: {count.count}')
+ml_health = httpx.get(os.environ['ML_API_URL'] + '/health', timeout=5)
+print(f'ML API: {ml_health.status_code}')
+print('Pipeline orchestrator: OK')
+"
 ```
 
 ---

@@ -165,6 +165,126 @@ END;
 $$;
 ```
 
+## Audit Log Hash Chain: Complete Verification & Tamper Detection
+
+```sql
+-- Full hash chain verification query — run this to detect any tampering
+-- Returns: any records where prev_record_hash doesn't match the previous record's record_hash
+WITH ordered_log AS (
+  SELECT
+    id,
+    sequence_number,
+    agent_id,
+    action_type,
+    timestamp_utc,
+    record_hash,
+    prev_record_hash,
+    LAG(record_hash) OVER (ORDER BY sequence_number) AS expected_prev_hash
+  FROM audit_log
+),
+tamper_check AS (
+  SELECT
+    id,
+    sequence_number,
+    agent_id,
+    action_type,
+    record_hash,
+    prev_record_hash,
+    expected_prev_hash,
+    CASE
+      WHEN sequence_number = 1 THEN prev_record_hash = repeat('0', 64)  -- genesis block
+      ELSE prev_record_hash = expected_prev_hash
+    END AS chain_intact
+  FROM ordered_log
+)
+SELECT
+  COUNT(*) FILTER (WHERE NOT chain_intact) AS tampered_records,
+  COUNT(*) AS total_records,
+  MIN(sequence_number) FILTER (WHERE NOT chain_intact) AS first_tampered_sequence,
+  CASE
+    WHEN COUNT(*) FILTER (WHERE NOT chain_intact) = 0 THEN 'CHAIN_INTACT ✅'
+    ELSE 'TAMPERING_DETECTED 🚨'
+  END AS integrity_status
+FROM tamper_check;
+
+-- Tamper detection alerting function
+CREATE OR REPLACE FUNCTION check_audit_chain_integrity()
+RETURNS void LANGUAGE plpgsql AS $$
+DECLARE
+  v_tampered_count int;
+  v_first_tampered bigint;
+BEGIN
+  WITH ordered_log AS (
+    SELECT
+      sequence_number,
+      record_hash,
+      prev_record_hash,
+      LAG(record_hash) OVER (ORDER BY sequence_number) AS expected_prev_hash
+    FROM audit_log
+  )
+  SELECT
+    COUNT(*) FILTER (WHERE sequence_number > 1 AND prev_record_hash != expected_prev_hash),
+    MIN(sequence_number) FILTER (WHERE sequence_number > 1 AND prev_record_hash != expected_prev_hash)
+  INTO v_tampered_count, v_first_tampered
+  FROM ordered_log;
+
+  IF v_tampered_count > 0 THEN
+    -- Log critical security event
+    INSERT INTO security_events (event_type, severity, details, created_at)
+    VALUES (
+      'AUDIT_LOG_TAMPERED',
+      'CRITICAL',
+      jsonb_build_object(
+        'tampered_records', v_tampered_count,
+        'first_tampered_sequence', v_first_tampered,
+        'detected_at', now()
+      ),
+      now()
+    );
+    -- Raise exception to trigger pg_notify for real-time alerting
+    PERFORM pg_notify('security_alert', json_build_object(
+      'type', 'AUDIT_CHAIN_BROKEN',
+      'tampered_count', v_tampered_count,
+      'first_sequence', v_first_tampered
+    )::text);
+  END IF;
+END;
+$$;
+
+-- Schedule integrity check: run every 6 hours via pg_cron
+SELECT cron.schedule('audit-integrity-check', '0 */6 * * *', 'SELECT check_audit_chain_integrity()');
+```
+
+```python
+# Python: Run audit chain verification and alert via Telegram if broken
+def verify_audit_chain_integrity(supabase) -> dict:
+    """
+    Verify audit_log hash chain integrity.
+    Run daily via GitHub Actions or on-demand after any security event.
+    """
+    try:
+        result = supabase.rpc('check_audit_chain_integrity_report').execute()
+        report = result.data[0] if result.data else {}
+    except Exception as e:
+        return {"error": f"Integrity check failed: {str(e)}", "chain_intact": False}
+
+    if report.get('tampered_records', 0) > 0:
+        send_telegram_alert(
+            f"🚨 CRITICAL: audit_log TAMPERING DETECTED\n"
+            f"Tampered records: {report['tampered_records']}\n"
+            f"First tampered sequence: {report['first_tampered_sequence']}\n"
+            f"Integrity status: {report['integrity_status']}\n"
+            f"Immediate investigation required!"
+        )
+
+    return {
+        "chain_intact": report.get('tampered_records', 0) == 0,
+        "total_records": report.get('total_records', 0),
+        "tampered_records": report.get('tampered_records', 0),
+        "integrity_status": report.get('integrity_status', 'UNKNOWN'),
+    }
+```
+
 ## Decision Evidence Chain
 
 ```python
@@ -350,6 +470,143 @@ def verify_execute_cannot_elevate_to_design(delegator_authority: str, delegatee_
     return True
 ```
 
+## Complete Delegation Chain Request Flow
+
+**Full flow**: request arrives → check agent_name in roster → verify authority level → check delegation depth < 3 → log to audit_log → execute or reject.
+
+```python
+class DelegationChainProcessor:
+    """
+    Complete request processing with full delegation chain verification.
+    Every step is logged. Any failure = immediate rejection + security event.
+    """
+
+    def process_request(
+        self,
+        requesting_agent_id: str,
+        target_resource: str,
+        requested_action: str,
+        delegation_chain: list[str],  # [original_delegator, ..., immediate_delegator]
+        payload: dict,
+    ) -> dict:
+        """
+        Complete flow:
+        1. Validate requesting_agent_id exists in agent_registry
+        2. Verify authority level covers requested_action
+        3. Check delegation chain depth < 3
+        4. Verify each link in delegation chain is valid
+        5. Check no scope escalation
+        6. Log to audit_log (always, even on rejection)
+        7. Execute or reject
+        """
+
+        # Step 1: Check agent exists in roster
+        try:
+            agent = supabase.table('agent_registry') \
+                .select('*') \
+                .eq('agent_id', requesting_agent_id) \
+                .eq('is_active', True) \
+                .single() \
+                .execute().data
+        except Exception:
+            self._log_and_reject(requesting_agent_id, target_resource, requested_action,
+                                 delegation_chain, "AGENT_NOT_IN_REGISTRY")
+            return {"allowed": False, "reason": "Agent not found in registry"}
+
+        # Step 2: Verify authority level covers requested action
+        if not self._check_authority_covers_action(agent['authority_level'], requested_action, target_resource):
+            self._log_and_reject(requesting_agent_id, target_resource, requested_action,
+                                 delegation_chain, "INSUFFICIENT_AUTHORITY",
+                                 f"{agent['authority_level']} cannot perform {requested_action} on {target_resource}")
+            return {"allowed": False, "reason": f"Authority level {agent['authority_level']} insufficient for {requested_action}"}
+
+        # Step 3: Check delegation depth
+        full_chain = delegation_chain + [requesting_agent_id]
+        if len(full_chain) > MAX_DELEGATION_DEPTH:
+            self._log_and_reject(requesting_agent_id, target_resource, requested_action,
+                                 delegation_chain, "DELEGATION_DEPTH_EXCEEDED",
+                                 f"Chain depth: {len(full_chain)} (max: {MAX_DELEGATION_DEPTH})")
+            return {"allowed": False, "reason": f"Delegation depth {len(full_chain)} exceeds maximum {MAX_DELEGATION_DEPTH}"}
+
+        # Step 4: Verify each delegation link is valid
+        for i in range(len(full_chain) - 1):
+            delegator = full_chain[i]
+            delegatee = full_chain[i + 1]
+            if not self._verify_delegation_link(delegator, delegatee):
+                self._log_and_reject(requesting_agent_id, target_resource, requested_action,
+                                     delegation_chain, "INVALID_DELEGATION_LINK",
+                                     f"Invalid link: {delegator} → {delegatee}")
+                return {"allowed": False, "reason": f"Invalid delegation: {delegator} cannot delegate to {delegatee}"}
+
+        # Step 5: Check scope constraint (no privilege escalation)
+        constraints = BidDeedDelegationVerifier.SCOPE_CONSTRAINTS.get(requesting_agent_id, {})
+        if target_resource in constraints.get("cannot_write", []):
+            self._log_and_reject(requesting_agent_id, target_resource, requested_action,
+                                 delegation_chain, "SCOPE_ESCALATION_BLOCKED",
+                                 f"{requesting_agent_id} attempted to access forbidden resource {target_resource}")
+            return {"allowed": False, "reason": f"Scope escalation blocked: {requesting_agent_id} cannot access {target_resource}"}
+
+        # Step 6: Log successful authorization to audit_log
+        audit_id = log_agent_action(
+            p_agent_id=requesting_agent_id,
+            p_action_type=requested_action,
+            p_resource=target_resource,
+            p_input=payload,
+            p_output={},
+            p_authority=agent['authority_level'],
+            p_success=True,
+            p_delegation_chain=full_chain,
+        )
+
+        # Step 7: Authorized — proceed
+        return {
+            "allowed": True,
+            "audit_log_id": str(audit_id),
+            "authority_used": agent['authority_level'],
+            "delegation_chain": full_chain,
+        }
+
+    def _check_authority_covers_action(self, authority_level: str, action: str, resource: str) -> bool:
+        AUTHORITY_PERMISSIONS = {
+            "FULL":       ["*"],
+            "DESIGN":     ["architecture", "review", "specs", "read"],
+            "EXECUTE":    ["code", "deploy", "git_push", "supabase_migrations", "read"],
+            "ORCHESTRATE":["pipeline_transitions", "stage_routing", "read"],
+            "REVIEW":     ["github_issues", "pr_review", "read"],
+            "READ":       ["read", "code_index"],
+            "COLLECT":    ["external_sources", "INSERT:multi_county_auctions"],
+            "PREDICT":    ["ml_inference", "UPDATE:multi_county_auctions:ml_score"],
+            "GENERATE":   ["docx_generation", "pdf_generation", "INSERT:decision_log"],
+        }
+        allowed = AUTHORITY_PERMISSIONS.get(authority_level, [])
+        return "*" in allowed or action in allowed or any(a.startswith(action) for a in allowed)
+
+    def _verify_delegation_link(self, delegator: str, delegatee: str) -> bool:
+        verifier = BidDeedDelegationVerifier()
+        return verifier.verify_delegation(delegator, delegatee, "any")
+
+    def _log_and_reject(self, agent_id, resource, action, chain, reason, detail=""):
+        log_security_event(
+            f"REQUEST_REJECTED: {agent_id} attempted {action} on {resource}. Reason: {reason}. {detail}",
+            severity="HIGH" if reason != "AGENT_NOT_IN_REGISTRY" else "CRITICAL"
+        )
+        # Still log to audit_log even on rejection (append-only audit trail)
+        try:
+            log_agent_action(
+                p_agent_id=agent_id if agent_id else "unknown",
+                p_action_type=action,
+                p_resource=resource,
+                p_input={},
+                p_output={"rejected": True, "reason": reason},
+                p_authority="UNKNOWN",
+                p_success=False,
+                p_error=f"{reason}: {detail}",
+                p_delegation_chain=chain,
+            )
+        except Exception:
+            pass  # Never let audit log failure block security event logging
+```
+
 ## Credential Rotation Schedule
 
 ```python
@@ -389,6 +646,119 @@ def check_rotation_needed():
     for cred in CREDENTIALS:
         if cred['status'] in ('CRITICAL', 'HIGH'):
             send_telegram_alert(f"⚠️ Credential action needed: {cred['name']}\n{cred['action']}")
+```
+
+## PAT Rotation Policy: 90-Day Schedule with Auto-Revocation
+
+**Schedule**: Every PAT must expire within 90 days. Alert at day 75. Auto-revoke at day 90.
+
+```python
+# scripts/pat_rotation_manager.py
+# Runs via GitHub Actions cron: every Monday at 9AM EST
+from datetime import datetime, timedelta, timezone
+import os, httpx
+
+PAT_ROTATION_SCHEDULE = {
+    "issue_date_env": "PAT_ISSUE_DATE",        # Store in GitHub Secret as ISO date
+    "alert_at_days": 75,                        # Send Telegram alert at day 75
+    "expire_at_days": 90,                       # Hard revoke at day 90
+    "auto_revoke": True,                        # Disable PAT via GitHub API on day 90
+}
+
+def check_and_enforce_pat_rotation():
+    """
+    1. Read PAT issue date from GitHub Secret PAT_ISSUE_DATE
+    2. Alert Ariel at day 75 via Telegram
+    3. Auto-revoke at day 90 via GitHub API (disable the PAT token)
+    4. Log result to Supabase audit_log
+    """
+    issue_date_str = os.environ.get('PAT_ISSUE_DATE')
+    github_token = os.environ.get('GITHUB_TOKEN')  # Actions token for API calls
+    pat_token_id = os.environ.get('PAT_TOKEN_ID')  # GitHub PAT token ID (not the secret itself)
+
+    if not issue_date_str:
+        send_telegram_alert("🚨 CRITICAL: PAT_ISSUE_DATE secret not set. Cannot enforce rotation!")
+        return {"status": "ERROR", "reason": "PAT_ISSUE_DATE not configured"}
+
+    issue_date = datetime.fromisoformat(issue_date_str).replace(tzinfo=timezone.utc)
+    days_old = (datetime.now(timezone.utc) - issue_date).days
+
+    if days_old >= PAT_ROTATION_SCHEDULE["expire_at_days"]:
+        # Auto-revoke: disable PAT via GitHub API
+        try:
+            revoke_result = revoke_github_pat(github_token, pat_token_id)
+            send_telegram_alert(
+                f"🔴 PAT AUTO-REVOKED: Token was {days_old} days old (max: 90 days)\n"
+                f"ACTION REQUIRED: Create new PAT in GitHub → Settings → Developer Settings → PATs\n"
+                f"Then update PAT_ISSUE_DATE secret to today's date."
+            )
+            log_agent_action_direct(
+                agent_id='security-automation',
+                action_type='PAT_REVOKED',
+                resource='github_pat',
+                success=revoke_result,
+                note=f"PAT auto-revoked at day {days_old}"
+            )
+        except Exception as e:
+            send_telegram_alert(f"🚨 PAT REVOCATION FAILED: {type(e).__name__}. Manual action required NOW!")
+
+        return {"status": "REVOKED", "days_old": days_old}
+
+    elif days_old >= PAT_ROTATION_SCHEDULE["alert_at_days"]:
+        # Alert at day 75 — give 15 days to rotate
+        days_remaining = PAT_ROTATION_SCHEDULE["expire_at_days"] - days_old
+        send_telegram_alert(
+            f"⚠️ PAT ROTATION REQUIRED: Token is {days_old} days old\n"
+            f"Auto-revocation in {days_remaining} days (day 90)\n"
+            f"Steps: GitHub → Settings → Developer Settings → Fine-grained tokens → Rotate\n"
+            f"Then update PAT_ISSUE_DATE secret to today's date."
+        )
+        return {"status": "ALERT_SENT", "days_old": days_old, "days_until_revoke": days_remaining}
+
+    return {"status": "OK", "days_old": days_old, "days_until_alert": PAT_ROTATION_SCHEDULE["alert_at_days"] - days_old}
+
+
+def revoke_github_pat(github_token: str, pat_id: str) -> bool:
+    """Revoke a GitHub PAT via the GitHub API."""
+    try:
+        response = httpx.delete(
+            f"https://api.github.com/user/installations/{pat_id}",
+            headers={
+                "Authorization": f"Bearer {github_token}",
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+            },
+            timeout=10,
+        )
+        return response.status_code in (204, 404)  # 204 = deleted, 404 = already gone
+    except Exception as e:
+        print(f"PAT revocation API call failed: {type(e).__name__}")
+        return False
+```
+
+```yaml
+# .github/workflows/pat-rotation-check.yml
+name: PAT Rotation Enforcement
+on:
+  schedule:
+    - cron: "0 14 * * 1"  # Every Monday 9AM EST (14:00 UTC)
+  workflow_dispatch:
+
+jobs:
+  check-pat-rotation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check PAT rotation schedule
+        env:
+          PAT_ISSUE_DATE: ${{ secrets.PAT_ISSUE_DATE }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PAT_TOKEN_ID: ${{ secrets.PAT_TOKEN_ID }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python scripts/pat_rotation_manager.py
 ```
 
 ## Rate Limiting & Abuse Prevention
@@ -448,6 +818,99 @@ def with_circuit_breaker(operation_name: str, fn, *args, **kwargs):
             if cb["failures"] >= cb["threshold"]:
                 cb["tripped"] = True
         raise
+```
+
+## Telegram Credential Security
+
+**RULE**: Telegram bot token and chat ID MUST be stored in GitHub Secrets (for Actions) or Supabase Vault (for Edge Functions). NEVER in `.env` files, code, or log output.
+
+```python
+# Secure Telegram delivery pattern for identity/audit alerts
+import os
+
+def send_security_telegram_alert(message: str, severity: str = "INFO") -> bool:
+    """
+    Secure alert delivery. Credentials come from environment only.
+    Token and chat_id are NEVER logged, printed, or stored in code.
+    """
+    bot_token = os.environ.get('TELEGRAM_BOT_TOKEN')
+    chat_id = os.environ.get('TELEGRAM_CHAT_ID')
+
+    if not bot_token or not chat_id:
+        # Safe error — never prints the actual values
+        import logging
+        logging.warning("Telegram credentials not configured (check GitHub Secrets)")
+        return False
+
+    prefix = {"CRITICAL": "🚨", "HIGH": "🔴", "WARNING": "⚠️", "INFO": "ℹ️"}.get(severity, "ℹ️")
+    try:
+        import httpx
+        resp = httpx.post(
+            f"https://api.telegram.org/bot{bot_token}/sendMessage",
+            json={"chat_id": chat_id, "text": f"{prefix} {message}", "parse_mode": "Markdown"},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        return True
+    except Exception as e:
+        # Log type only — never log credentials
+        import logging
+        logging.error(f"Telegram delivery failed: {type(e).__name__}")
+        return False
+
+# Required GitHub Secrets:
+# TELEGRAM_BOT_TOKEN  — BotFather token (never in .env or code)
+# TELEGRAM_CHAT_ID    — Ariel's chat ID (never in .env or code)
+
+# To store in Supabase Vault (for Edge Functions):
+# INSERT INTO vault.secrets (name, secret) VALUES ('telegram_bot_token', 'YOUR_TOKEN');
+# INSERT INTO vault.secrets (name, secret) VALUES ('telegram_chat_id', 'YOUR_CHAT_ID');
+```
+
+## Setup & Migration
+
+### Required Supabase Tables
+```sql
+-- Create these tables before using this agent:
+-- agent_registry    — agent roster with authority levels (SQL above)
+-- audit_log         — append-only hash chain (SQL above)
+-- security_events   — pipeline health and security incidents
+-- decision_log      — BID/REVIEW/SKIP decisions with evidence chains
+
+-- Required extension:
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+-- Verify setup:
+SELECT agent_id, authority_level, is_active FROM agent_registry;
+SELECT COUNT(*) as total_audit_records FROM audit_log;
+```
+
+### Required Environment Variables
+```bash
+SUPABASE_URL=https://mocerqjnksmhcjzxrewo.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=<from GitHub Secrets>
+TELEGRAM_BOT_TOKEN=<from GitHub Secrets>
+TELEGRAM_CHAT_ID=<from GitHub Secrets>
+PAT_ISSUE_DATE=<ISO date when current PAT was created, e.g. 2026-03-10>
+PAT_TOKEN_ID=<GitHub PAT token ID for auto-revocation>
+```
+
+### Required Python Packages
+```bash
+pip install supabase httpx python-dateutil
+```
+
+### One-Liner Test
+```bash
+# Test identity agent tables are set up correctly
+python -c "
+from supabase import create_client; import os
+sb = create_client(os.environ['SUPABASE_URL'], os.environ['SUPABASE_SERVICE_ROLE_KEY'])
+agents = sb.table('agent_registry').select('agent_id,authority_level').execute()
+print('Registered agents:', len(agents.data))
+for a in agents.data: print(f'  {a[\"agent_id\"]}: {a[\"authority_level\"]}')
+print('Identity agent: OK')
+"
 ```
 
 ## Deliverables

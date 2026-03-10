@@ -174,6 +174,86 @@ def compute_ml_health(supabase, lookback_days=90):
     }
 ```
 
+```python
+def compute_calibration_plot(y_true: list, y_pred: list, n_bins: int = 10) -> dict:
+    """
+    Calibration plot data: group predictions into deciles, compare to actual rates.
+    Well-calibrated model: predicted 70% → actual ~70% of auctions go to third party.
+    """
+    import numpy as np
+    bins = np.linspace(0, 1, n_bins + 1)
+    calibration_data = []
+    for i in range(n_bins):
+        mask = [(p >= bins[i] and p < bins[i+1]) for p in y_pred]
+        if sum(mask) == 0:
+            continue
+        bin_pred_mean = sum(p for p, m in zip(y_pred, mask) if m) / sum(mask)
+        bin_actual_rate = sum(t for t, m in zip(y_true, mask) if m) / sum(mask)
+        calibration_data.append({
+            "bin_low": round(bins[i], 2),
+            "bin_high": round(bins[i+1], 2),
+            "predicted_mean": round(bin_pred_mean, 4),
+            "actual_rate": round(bin_actual_rate, 4),
+            "sample_count": sum(mask),
+            "calibration_error": round(abs(bin_pred_mean - bin_actual_rate), 4),
+        })
+    mean_calibration_error = sum(b["calibration_error"] for b in calibration_data) / max(len(calibration_data), 1)
+    return {
+        "bins": calibration_data,
+        "mean_calibration_error": round(mean_calibration_error, 4),
+        "well_calibrated": mean_calibration_error < 0.05,  # <5% mean error = well-calibrated
+    }
+
+
+def check_feature_drift(supabase, baseline_days: int = 90, recent_days: int = 7) -> dict:
+    """
+    Detect if feature distributions have drifted (data quality / market shift indicator).
+    Compare recent 7-day feature stats vs 90-day baseline.
+    Alert if any feature drifts >20% from baseline mean.
+    """
+    try:
+        recent = supabase.table('multi_county_auctions') \
+            .select('judgment_amount, ml_score, plaintiff_type') \
+            .gte('auction_date', (date.today() - timedelta(days=recent_days)).isoformat()) \
+            .execute().data
+
+        baseline = supabase.table('multi_county_auctions') \
+            .select('judgment_amount, ml_score, plaintiff_type') \
+            .gte('auction_date', (date.today() - timedelta(days=baseline_days)).isoformat()) \
+            .lt('auction_date', (date.today() - timedelta(days=recent_days)).isoformat()) \
+            .execute().data
+    except Exception as e:
+        return {"error": f"Feature drift query failed: {str(e)}", "drift_detected": False}
+
+    if not recent or not baseline:
+        return {"drift_detected": False, "reason": "insufficient_data"}
+
+    def safe_mean(records, field):
+        vals = [r[field] for r in records if r.get(field) is not None]
+        return sum(vals) / len(vals) if vals else 0
+
+    recent_avg_judgment = safe_mean(recent, 'judgment_amount')
+    baseline_avg_judgment = safe_mean(baseline, 'judgment_amount')
+    drift_pct = abs(recent_avg_judgment - baseline_avg_judgment) / max(baseline_avg_judgment, 1) * 100
+
+    drift_alert = drift_pct > 20
+    if drift_alert:
+        send_telegram_alert(
+            f"⚠️ FEATURE DRIFT: avg judgment_amount drifted {drift_pct:.1f}% from 90-day baseline\n"
+            f"Baseline: ${baseline_avg_judgment:,.0f} | Recent 7d: ${recent_avg_judgment:,.0f}\n"
+            f"May indicate market shift or data quality issue."
+        )
+
+    return {
+        "drift_detected": drift_alert,
+        "judgment_amount_drift_pct": round(drift_pct, 2),
+        "baseline_avg_judgment": round(baseline_avg_judgment, 2),
+        "recent_avg_judgment": round(recent_avg_judgment, 2),
+        "recent_sample_size": len(recent),
+        "baseline_sample_size": len(baseline),
+    }
+```
+
 ### Dashboard 3: Pipeline Operations (Real-Time)
 ```python
 def pipeline_operations_dashboard(supabase):
@@ -275,6 +355,218 @@ def get_supabase_client():
     return create_client(os.environ['SUPABASE_URL'], os.environ['SUPABASE_SERVICE_KEY'])
 ```
 
+## Access Control: Use Views, Never Direct Tables
+
+**CRITICAL**: Dashboard queries MUST go through `auctions_free` or `auctions_pro` views — never direct `multi_county_auctions` table access from user-facing code. The views enforce RLS tier filtering.
+
+```sql
+-- CORRECT: Query through RLS-enforced views
+-- Free tier users see filtered view (RLS policy 1: free_read_auctions)
+SELECT county, COUNT(*) as total, AVG(ml_score) as avg_score
+FROM auctions_free   -- ← view enforces RLS automatically
+WHERE auction_date >= CURRENT_DATE
+GROUP BY county;
+
+-- Pro tier users see full view (RLS policy 2: pro_read_auctions)
+SELECT county, case_number, judgment_amount, max_bid, decision, ml_score
+FROM auctions_pro    -- ← view enforces RLS automatically
+WHERE auction_date >= CURRENT_DATE
+  AND decision = 'BID'
+ORDER BY ml_score DESC;
+
+-- WRONG: Never query multi_county_auctions directly in user-facing analytics
+-- SELECT * FROM multi_county_auctions WHERE ...  ← BANNED from client code
+-- All direct table queries must use service role in GitHub Actions only
+```
+
+```sql
+-- Create the RLS-enforced views (run once in Supabase SQL editor)
+CREATE OR REPLACE VIEW auctions_free AS
+  SELECT case_number, county, auction_date, property_address,
+         plaintiff_type, decision, ml_score
+  FROM multi_county_auctions
+  WHERE is_active = true;
+-- RLS Policy 1 on multi_county_auctions filters free tier automatically
+
+CREATE OR REPLACE VIEW auctions_pro AS
+  SELECT *  -- full row access for pro tier
+  FROM multi_county_auctions;
+-- RLS Policy 2 on multi_county_auctions gates this to pro/enterprise users
+
+-- Row-level filtering example: user sees only their saved searches
+CREATE OR REPLACE VIEW user_saved_auctions AS
+  SELECT a.*
+  FROM multi_county_auctions a
+  JOIN user_saved_searches s ON s.case_number = a.case_number
+  WHERE s.user_id = auth.uid();  -- RLS: each user sees only their saves
+```
+
+## Parameterized Queries: Never Use String Interpolation in SQL
+
+**RULE**: ALL date parameters, user inputs, and filter values MUST use parameterized queries. String interpolation in SQL creates SQL injection vulnerabilities.
+
+```python
+# CORRECT: Parameterized queries via Supabase PostgREST SDK
+# All SDK filter methods (.eq, .gte, .lt, .in_) are automatically parameterized
+
+def get_auctions_by_date_range(supabase, start_date: str, end_date: str, county: str) -> list:
+    """Parameterized query — no string interpolation."""
+    try:
+        result = supabase.table('auctions_pro') \
+            .select('case_number, county, auction_date, decision, ml_score, max_bid') \
+            .gte('auction_date', start_date) \   # Parameterized: no f-string
+            .lte('auction_date', end_date) \     # Parameterized: no f-string
+            .eq('county', county) \              # Parameterized: no f-string
+            .order('auction_date', desc=True) \
+            .execute()
+        return result.data
+    except Exception as e:
+        log_security_event(f"Auction date range query failed: {str(e)}", severity="ERROR")
+        return []
+
+# CORRECT: Parameterized RPC call for complex analytics
+def get_county_stats(supabase, county: str, start_date: str) -> dict:
+    """Use RPC for complex queries — params are passed as dict, never interpolated."""
+    try:
+        result = supabase.rpc('get_county_auction_stats', {
+            'p_county': county,         # Parameterized
+            'p_start_date': start_date, # Parameterized
+        }).execute()
+        return result.data
+    except Exception as e:
+        log_security_event(f"County stats RPC failed: {str(e)}", severity="ERROR")
+        return {}
+
+# WRONG — NEVER DO THIS (SQL injection risk):
+# query = f"SELECT * FROM auctions WHERE county = '{user_input}'"  ← BANNED
+# query = f"SELECT * FROM auctions WHERE date > '{start_date}'"   ← BANNED
+# supabase.rpc('func', {'param': f"'{user_value}'"})              ← BANNED
+```
+
+## Rate Limiting for Analytics Endpoints
+
+**Rules enforced via Supabase Edge Function `enforce-analytics-quota`:**
+- **Free tier**: max 100 dashboard queries per user per hour
+- **Pro tier**: max 1,000 dashboard queries per user per hour
+- **API**: max 1,000 API calls per day per free-tier user; max 10,000 for pro
+- **Circuit breaker**: trip after 50 consecutive errors from any single user (blocks for 1 hour)
+
+```python
+# Rate limiting implementation (enforced in Supabase Edge Function)
+ANALYTICS_RATE_LIMITS = {
+    "free": {
+        "dashboard_queries_per_hour": 100,
+        "api_calls_per_day": 1000,
+    },
+    "pro": {
+        "dashboard_queries_per_hour": 1000,
+        "api_calls_per_day": 10000,
+    },
+}
+
+CIRCUIT_BREAKER = {
+    "consecutive_errors_threshold": 50,
+    "block_duration_seconds": 3600,  # 1 hour
+}
+
+def check_analytics_rate_limit(user_id: str, user_tier: str) -> tuple[bool, str]:
+    """
+    Returns (allowed: bool, reason: str).
+    Called before every dashboard query or API call.
+    Limits stored in Supabase user_tiers.query_count / api_call_count.
+    """
+    try:
+        tier_data = supabase.table('user_tiers') \
+            .select('tier, hourly_query_count, daily_api_count, consecutive_errors, circuit_breaker_until') \
+            .eq('user_id', user_id) \
+            .single() \
+            .execute().data
+    except Exception as e:
+        return False, f"Rate limit check failed: {str(e)}"
+
+    # Circuit breaker check
+    if tier_data.get('circuit_breaker_until'):
+        from datetime import datetime, timezone
+        breaker_until = datetime.fromisoformat(tier_data['circuit_breaker_until'])
+        if datetime.now(timezone.utc) < breaker_until:
+            return False, f"Circuit breaker active until {breaker_until.isoformat()} (50+ consecutive errors)"
+
+    limits = ANALYTICS_RATE_LIMITS.get(user_tier, ANALYTICS_RATE_LIMITS["free"])
+
+    if tier_data['hourly_query_count'] >= limits['dashboard_queries_per_hour']:
+        return False, f"Hourly dashboard query limit reached ({limits['dashboard_queries_per_hour']}/hour for {user_tier})"
+
+    if tier_data['daily_api_count'] >= limits['api_calls_per_day']:
+        return False, f"Daily API call limit reached ({limits['api_calls_per_day']}/day for {user_tier})"
+
+    return True, "OK"
+```
+
+```sql
+-- Supabase Edge Function: enforce-analytics-quota (TypeScript)
+-- Deployed as: supabase/functions/enforce-analytics-quota/index.ts
+-- Called before every analytics query via PostgREST hook
+
+-- Track rate limit counters in user_tiers table
+ALTER TABLE user_tiers ADD COLUMN IF NOT EXISTS hourly_query_count int DEFAULT 0;
+ALTER TABLE user_tiers ADD COLUMN IF NOT EXISTS hourly_window_start timestamptz DEFAULT now();
+ALTER TABLE user_tiers ADD COLUMN IF NOT EXISTS daily_api_count int DEFAULT 0;
+ALTER TABLE user_tiers ADD COLUMN IF NOT EXISTS daily_window_start timestamptz DEFAULT now();
+ALTER TABLE user_tiers ADD COLUMN IF NOT EXISTS consecutive_errors int DEFAULT 0;
+ALTER TABLE user_tiers ADD COLUMN IF NOT EXISTS circuit_breaker_until timestamptz;
+```
+
+## Telegram Credential Security
+
+**RULE**: Telegram bot token and chat ID MUST be stored in GitHub Secrets or Supabase Vault. NEVER in `.env` files committed to git, inline in code, or in any log output.
+
+```python
+# CORRECT: Read from environment (populated from GitHub Secrets in Actions,
+# or from Supabase Vault in Edge Functions)
+import os
+
+def send_telegram_alert(message: str) -> bool:
+    """
+    Secure Telegram delivery pattern.
+    Token and chat_id come from environment — NEVER hardcoded.
+    """
+    # In GitHub Actions: set via repository secrets
+    # TELEGRAM_BOT_TOKEN → GitHub Secret → injected as env var
+    # TELEGRAM_CHAT_ID   → GitHub Secret → injected as env var
+    bot_token = os.environ.get('TELEGRAM_BOT_TOKEN')
+    chat_id = os.environ.get('TELEGRAM_CHAT_ID')
+
+    if not bot_token or not chat_id:
+        # Log missing config but NEVER log the actual values
+        print("WARNING: Telegram credentials not configured (TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID)")
+        return False
+
+    try:
+        import httpx
+        response = httpx.post(
+            f"https://api.telegram.org/bot{bot_token}/sendMessage",
+            json={"chat_id": chat_id, "text": message, "parse_mode": "Markdown"},
+            timeout=10,
+        )
+        response.raise_for_status()
+        return True
+    except Exception as e:
+        # Log the error but NEVER log bot_token or chat_id in error messages
+        print(f"Telegram alert failed: {type(e).__name__}")
+        return False
+
+# GitHub Actions workflow — set secrets, never env files:
+# jobs:
+#   weekly-summary:
+#     env:
+#       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}  ← GitHub Secret
+#       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}      ← GitHub Secret
+
+# Supabase Vault (for Edge Functions):
+# SELECT vault.create_secret('telegram_bot_token', 'YOUR_TOKEN', 'Telegram bot for alerts');
+# Access in Edge Function: const token = await getSecret('telegram_bot_token');
+```
+
 ## Weekly Executive Summary (Auto-Generated Friday 2PM EST)
 
 ```python
@@ -319,6 +611,65 @@ Review time estimate: ~15 min
     return summary
 ```
 
+## LiteLLM Cost Formulas
+
+**Exact cost formula per property analyzed:**
+
+```
+cost_per_property = (input_tokens × model_price_in) + (output_tokens × model_price_out)
+
+Smart Router Tier Prices (per 1M tokens):
+┌──────────────────────────┬───────────────┬────────────────┬─────────────────────┐
+│ Tier / Model             │ Input ($/1M)  │ Output ($/1M)  │ Typical cost/prop   │
+├──────────────────────────┼───────────────┼────────────────┼─────────────────────┤
+│ Tier 1: Claude Sonnet    │ $3.00         │ $15.00         │ ~$0.024/property    │
+│ Tier 2: Gemini 2.5 Flash │ $0.075        │ $0.30          │ ~$0.0006/property   │
+│ Tier 3: DeepSeek V3      │ $0.14         │ $0.28          │ ~$0.0011/property   │
+│ Tier 4: Cached (Supabase)│ $0.00         │ $0.00          │ $0.00/property      │
+└──────────────────────────┴───────────────┴────────────────┴─────────────────────┘
+
+Target blend: $0.02/property (mix of all tiers)
+Alert threshold: $0.05/property (5× budget)
+```
+
+```python
+# Actual LiteLLM cost tracking — called after each LLM inference
+MODEL_PRICES = {
+    "claude-sonnet-4-6": {"input_per_1m": 3.00,   "output_per_1m": 15.00},
+    "gemini-2.5-flash":  {"input_per_1m": 0.075,  "output_per_1m": 0.30},
+    "deepseek-v3":       {"input_per_1m": 0.14,   "output_per_1m": 0.28},
+    "cached":            {"input_per_1m": 0.00,   "output_per_1m": 0.00},
+}
+
+def compute_llm_cost(model: str, input_tokens: int, output_tokens: int) -> float:
+    """Exact cost formula: (input_tokens × price_in + output_tokens × price_out) / 1_000_000"""
+    prices = MODEL_PRICES.get(model, MODEL_PRICES["claude-sonnet-4-6"])
+    cost = (input_tokens * prices["input_per_1m"] + output_tokens * prices["output_per_1m"]) / 1_000_000
+    return round(cost, 8)
+
+def get_weekly_api_cost() -> dict:
+    """Pull actual LiteLLM usage logs and compute weekly cost breakdown."""
+    try:
+        # LiteLLM logs to Supabase litellm_spend_logs table
+        logs = supabase.table('litellm_spend_logs') \
+            .select('model, input_tokens, output_tokens, spend_usd') \
+            .gte('created_at', (date.today() - timedelta(days=7)).isoformat()) \
+            .execute().data
+    except Exception as e:
+        return {"error": f"LiteLLM cost query failed: {str(e)}", "total_usd": 0}
+
+    by_model = {}
+    for log in logs:
+        model = log.get('model', 'unknown')
+        by_model[model] = by_model.get(model, 0) + log.get('spend_usd', 0)
+
+    return {
+        "total_usd": round(sum(by_model.values()), 4),
+        "by_model": {k: round(v, 4) for k, v in by_model.items()},
+        "over_budget": sum(by_model.values()) > 25,  # $25/week target
+    }
+```
+
 ## Deliverables
 
 1. **Weekly executive summary**: Telegram message formatted for 20-minute review — properties analyzed, scraper uptime, ML AUC, API cost, top BID opportunities, actions needed
@@ -326,6 +677,50 @@ Review time estimate: ~15 min
 3. **Pipeline operations snapshot**: Scraper uptime %, county freshness, API daily burn, budget percentage — real-time dashboard data
 4. **Monthly financial report**: Cost breakdown by service (LiteLLM, Firecrawl, Render, Supabase), cost-per-property vs $0.02 target, ROI tracking for validated BID outcomes
 5. **Anomaly alerts**: Telegram messages within 5 minutes when any KPI breaches threshold (AUC < 0.60, county drop >50%, cost >$5/day)
+
+## Setup & Migration
+
+### Required Supabase Tables
+```sql
+-- Tables this agent reads (must exist):
+-- multi_county_auctions (245K rows) — primary auction data
+-- historical_auctions — ML training/validation data with third_party outcome
+-- daily_metrics — pipeline run summaries
+-- security_events — pipeline health incidents
+-- user_tiers — rate limit counters (requires columns added above)
+-- litellm_spend_logs — LiteLLM cost tracking (created by LiteLLM proxy)
+
+-- Views required (create via Supabase SQL editor):
+-- auctions_free — RLS-filtered view for free tier
+-- auctions_pro — full row view for pro tier
+-- (SQL above in Access Control section)
+```
+
+### Required Environment Variables
+```bash
+SUPABASE_URL=https://mocerqjnksmhcjzxrewo.supabase.co
+SUPABASE_SERVICE_KEY=<from GitHub Secrets: SUPABASE_SERVICE_ROLE_KEY>
+TELEGRAM_BOT_TOKEN=<from GitHub Secrets>
+TELEGRAM_CHAT_ID=<Ariel's Telegram chat ID, from GitHub Secrets>
+LITELLM_PROXY_URL=<LiteLLM proxy endpoint>
+```
+
+### Required Python Packages
+```bash
+pip install supabase scikit-learn numpy httpx python-dateutil
+```
+
+### One-Liner Test
+```bash
+# Test analytics agent is working
+python -c "
+from supabase import create_client; import os
+sb = create_client(os.environ['SUPABASE_URL'], os.environ['SUPABASE_SERVICE_KEY'])
+r = sb.table('daily_metrics').select('run_date, properties_analyzed').order('run_date', desc=True).limit(1).execute()
+print('Latest metrics:', r.data)
+print('Analytics agent: OK')
+"
+```
 
 ## Related Agents
 - **[biddeed-ml-score-agent](biddeed-ml-score-agent.md)** — ML model health (AUC-ROC) monitored via Dashboard 2 of this analytics agent
