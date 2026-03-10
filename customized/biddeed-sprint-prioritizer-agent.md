@@ -5,6 +5,17 @@ color: green
 tools: WebFetch, WebSearch, Read, Write, Edit
 ---
 
+## Quick Start
+
+**Invoke this agent when**: Planning a new sprint, prioritizing backlog items, or running the Sunday weekly planning session.
+
+1. **Load backlog**: Read TODO.md from GitHub — single source of truth for all sprint items
+2. **RICE score**: Apply Reach × Impact × Confidence / Effort to each backlog item
+3. **Sprint limit**: Max 3 items per sprint (ADHD guardrail — hard limit)
+4. **Weekly cutoff**: Friday 2PM EST — no new sprint items after this until Sunday planning
+
+**Quick command**: Ask "Score and prioritize my current backlog against the active sprint using RICE"
+
 ## BidDeed.AI / ZoneWise.AI Context
 
 **Founder**: Ariel Shapira — solo founder, 20-min/day oversight budget, ADHD-aware workflow
@@ -160,7 +171,7 @@ BidDeed.AI depends on ZoneWise.AI:
 ZoneWise.AI depends on BidDeed.AI:
   → multi_county_auctions schema for auction context
   → County list standardization (46 FL counties naming convention)
-  → Supabase shared infrastructure (same project: mocerqjnksmhcjzxrewo)
+  → Supabase shared infrastructure (same project: ${SUPABASE_PROJECT_REF})
 
 Shared infrastructure (BOTH products):
   → Supabase: tables, RLS, Edge Functions
@@ -234,6 +245,11 @@ You're successful when:
 - Weekly summary generated automatically by Friday 2PM EST
 - Zero sprint items added mid-sprint except P0 blockers
 - Ariel's review time stays under 20 minutes per week
+
+## Related Agents
+- **[biddeed-rapid-prototyper-agent](biddeed-rapid-prototyper-agent.md)** — 3-day sprints executed from items prioritized by this agent's RICE scoring
+- **[biddeed-analytics-agent](biddeed-analytics-agent.md)** — Weekly KPI summaries inform RICE scoring and sprint planning here
+- **[biddeed-growth-agent](biddeed-growth-agent.md)** — Growth experiments and conversion metrics feed into RICE impact scores
 
 ---
 **Original Source**: `product/product-sprint-prioritizer.md`

@@ -4,6 +4,17 @@ description: DevOps specialist for BidDeed.AI — GitHub Actions nightly scrape 
 color: orange
 ---
 
+## Quick Start
+
+**Invoke this agent when**: Setting up CI/CD, deploying to Cloudflare Pages or Render, managing GitHub Actions, or handling secrets rotation.
+
+1. **Trigger nightly pipeline**: `gh workflow run nightly-pipeline.yml`
+2. **Deploy frontend**: Push to main branch — Cloudflare Pages auto-deploys via GitHub integration
+3. **Deploy ML API**: `git push render main` — Render auto-deploys from GitHub
+4. **Rotate secrets**: Update in GitHub Settings > Secrets and update `check_credential_rotation.py`
+
+**Quick command**: `gh workflow list` to see all active GitHub Actions workflows
+
 ## BidDeed.AI / ZoneWise.AI Context
 
 **Product**: BidDeed.AI — AI-powered foreclosure auction intelligence for 46 Florida counties
@@ -231,7 +242,7 @@ jobs:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
         run: |
-          supabase link --project-ref mocerqjnksmhcjzxrewo
+          supabase link --project-ref ${SUPABASE_PROJECT_REF}
           supabase db push
 
       - name: Verify RLS policies
@@ -319,6 +330,11 @@ You're successful when:
 - Telegram alerts delivered within 60 seconds of pipeline completion/failure
 - Zero secrets exposed in logs or public repos
 - Canary deployments catch 100% of breaking scraper changes before full rollout
+
+## Related Agents
+- **[biddeed-data-pipeline-agent](biddeed-data-pipeline-agent.md)** — Nightly ETL pipeline orchestrated via GitHub Actions managed by this DevOps agent
+- **[biddeed-security-auditor](biddeed-security-auditor.md)** — Security scan jobs (Gitleaks, Semgrep, Trivy) in CI/CD pipeline run by this agent
+- **[biddeed-ml-score-agent](biddeed-ml-score-agent.md)** — Render ML FastAPI deployment managed by this DevOps agent
 
 ---
 **Original Source**: `engineering/engineering-devops-automator.md`

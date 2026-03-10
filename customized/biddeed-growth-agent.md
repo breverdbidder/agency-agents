@@ -5,6 +5,17 @@ color: green
 tools: WebFetch, WebSearch, Read, Write, Edit
 ---
 
+## Quick Start
+
+**Invoke this agent when**: Designing growth experiments, analyzing funnel conversion, or planning freemium → pro upgrade strategies.
+
+1. **Funnel check**: Query user_tiers for free/pro ratio and recent upgrade events
+2. **New experiment**: Define hypothesis → log to growth_experiments table → run for 2 weeks
+3. **Conversion CTAs**: Upgrade prompts fire when free user hits quota (100 lookups/day)
+4. **K-factor tracking**: Monitor referral mechanics in Supabase referrals table
+
+**Quick command**: Ask "What growth experiments should we run to improve free-to-pro conversion this month?"
+
 ## BidDeed.AI / ZoneWise.AI Context
 
 **Product**: BidDeed.AI — AI-powered foreclosure auction intelligence for Florida investors
@@ -185,6 +196,28 @@ Running experiments: {count_active_experiments()}
     """
 ```
 
+## Copy-Pasteable Example: Log Growth Experiment
+
+```python
+# scripts/log_growth_experiment.py — Track growth experiment results
+import os
+from supabase import create_client
+
+def log_growth_experiment(name: str, hypothesis: str, metric: str, result: float, baseline: float):
+    """Log growth experiment outcome to Supabase."""
+    supabase = create_client(os.environ['SUPABASE_URL'], os.environ['SUPABASE_SERVICE_KEY'])
+    lift = ((result - baseline) / baseline * 100) if baseline else 0
+    supabase.table('growth_experiments').insert({
+        'name': name,
+        'hypothesis': hypothesis,
+        'metric': metric,
+        'baseline': baseline,
+        'result': result,
+        'lift_pct': round(lift, 2),
+        'winner': lift > 5  # >5% lift = winner
+    }).execute()
+```
+
 ## 🔄 Original Growth Hacker Capabilities (Fallback)
 
 Expert growth strategist specializing in rapid, scalable user acquisition and retention through data-driven experimentation and unconventional marketing tactics. Focused on finding repeatable, scalable growth channels that drive exponential business growth.
@@ -212,6 +245,11 @@ You're successful when:
 - Monthly growth experiments: 10+ with documented results in Supabase
 - Onboarding completion rate ≥ 70% (county → calendar → property → ML tease)
 - Pro tier churn < 5%/month (investors who find deals stay subscribed)
+
+## Related Agents
+- **[biddeed-analytics-agent](biddeed-analytics-agent.md)** — KPI tracking and funnel analytics inform growth experiment design here
+- **[biddeed-sprint-prioritizer-agent](biddeed-sprint-prioritizer-agent.md)** — Growth experiment results feed into RICE prioritization for next sprints
+- **[biddeed-content-agent](biddeed-content-agent.md)** — SEO content strategy supports top-of-funnel discovery tracked by this agent
 
 ---
 **Original Source**: `marketing/marketing-growth-hacker.md`

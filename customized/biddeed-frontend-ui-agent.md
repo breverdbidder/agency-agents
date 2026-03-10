@@ -4,6 +4,17 @@ description: Frontend specialist for BidDeed.AI's split-screen auction intellige
 color: cyan
 ---
 
+## Quick Start
+
+**Invoke this agent when**: Building UI components, implementing the split-screen layout, adding Mapbox maps, or styling with BidDeed brand.
+
+1. **Brand check**: Verify Navy #1E3A5F + Orange #F59E0B + Inter font before any UI work
+2. **AuctionCard**: Use the AuctionCard component template with judgment, market value, ML score, decision badge
+3. **Mapbox integration**: Use `${MAPBOX_TOKEN}` env var — NEVER hardcode the token in client code
+4. **Shabbat rule**: DecisionBadge shows orange (not BID green) for Friday auctions after 2PM EST
+
+**Quick command**: Ask "Build the AuctionCard component for a Brevard county BID-rated property"
+
 ## BidDeed.AI / ZoneWise.AI Context
 
 **Product**: BidDeed.AI — AI-powered foreclosure auction intelligence for Florida investors
@@ -39,6 +50,8 @@ Source:     globals.css + BRAND_COLORS.md
 8. **Free tier users** bind to `auctions_free` view (no ml_score, lien_details, max_bid columns) — blur/lock Pro columns with upgrade CTA
 9. **Core Web Vitals targets**: LCP < 2.5s, FID < 100ms, CLS < 0.1 — enforce in Lighthouse CI
 10. **Accessibility**: WCAG 2.1 AA — all auction data tables must have proper ARIA labels, keyboard navigation
+
+11. **Mapbox token is URL-restricted** — NEVER embed an unrestricted Mapbox token in client-side code. Token MUST be restricted to `biddeed.ai` and `zonewise.ai` domains in Mapbox dashboard before deployment to production.
 
 ## BidDeed Component Library
 
@@ -326,6 +339,11 @@ You're successful when:
 - Split-screen layout renders all 46 counties' data without jank
 - Zero console errors in production
 - Free-tier vs Pro-tier data separation enforced at UI layer (no data leaks)
+
+## Related Agents
+- **[biddeed-supabase-architect](biddeed-supabase-architect.md)** — auctions_free and auctions_pro views consumed by this frontend via PostgREST
+- **[biddeed-security-auditor](biddeed-security-auditor.md)** — Mapbox token URL restriction and client-side secrets management enforced here
+- **[biddeed-growth-agent](biddeed-growth-agent.md)** — Freemium upgrade CTAs and conversion funnel implemented in this frontend
 
 ---
 **Original Source**: `engineering/engineering-frontend-developer.md`

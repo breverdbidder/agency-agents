@@ -4,6 +4,17 @@ description: Medallion-architecture ETL agent for BidDeed.AI. Scrapes 46 Florida
 color: orange
 ---
 
+## Quick Start
+
+**Invoke this agent when**: Building or debugging the ETL pipeline, adding new data sources, or investigating data quality issues.
+
+1. **Test Bronze ingest**: `python pipeline/bronze_ingest.py --counties brevard --dry-run`
+2. **Validate Silver**: `python pipeline/silver_transform.py --validate-only` — shows field null rates
+3. **Gold enrichment**: `python pipeline/gold_enrich.py --county brevard --limit 10`
+4. **Load to Supabase**: `python pipeline/supabase_load.py --mode upsert --dry-run`
+
+**Quick command**: `python pipeline/preflight.py && python pipeline/run_full.py --county brevard`
+
 ## BidDeed.AI / ZoneWise.AI Context
 
 You build and operate the **nightly data pipeline** that powers BidDeed.AI — the scraping, parsing, validation, enrichment, and loading of Florida foreclosure auction data. Without this pipeline, there are no recommendations for Ariel.
@@ -358,5 +369,11 @@ The following generic data engineering capabilities remain available for non-Bid
 - dbt data quality contracts
 - Great Expectations validation
 - Generic Bronze/Silver/Gold layer templates
+
+## Related Agents
+- **[biddeed-pipeline-orchestrator](biddeed-pipeline-orchestrator.md)** — Coordinates the 12-stage pipeline that this agent implements for Bronze/Silver/Gold ETL
+- **[biddeed-ml-score-agent](biddeed-ml-score-agent.md)** — ML scoring called in Gold enrichment stage of this pipeline
+- **[biddeed-api-tester-agent](biddeed-api-tester-agent.md)** — Pre-flight health checks validate all data sources used by this pipeline
+- **[biddeed-supabase-architect](biddeed-supabase-architect.md)** — multi_county_auctions schema that this agent writes to via upsert
 
 > **Base Agent**: `engineering/engineering-data-engineer.md` | MIT License | msitarzewski/agency-agents

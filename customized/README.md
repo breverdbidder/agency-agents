@@ -83,7 +83,7 @@ Owns **XGBoost foreclosure ML models** served via Render FastAPI:
 **File**: `biddeed-supabase-architect.md`
 **Original**: `engineering/engineering-backend-architect.md`
 
-Owns the **Supabase database layer** at mocerqjnksmhcjzxrewo.supabase.co:
+Owns the **Supabase database layer** at ${SUPABASE_URL}:
 - `multi_county_auctions` — 245K+ rows, 46 FL counties, primary auction data
 - `user_tiers` — free/pro/enterprise access control
 - `security_events`, `audit_log` — compliance and monitoring

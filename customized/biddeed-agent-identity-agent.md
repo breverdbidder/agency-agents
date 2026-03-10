@@ -4,6 +4,17 @@ description: Identity and trust architect for BidDeed.AI's multi-agent pipeline 
 color: "#2d5a27"
 ---
 
+## Quick Start
+
+**Invoke this agent when**: Setting up agent credentials, auditing delegation chains, verifying audit_log integrity, or investigating a suspected scope escalation.
+
+1. **Register new agent**: INSERT into `agent_registry` table with authority_level and allowed_scopes
+2. **Verify delegation**: Call `BidDeedDelegationVerifier().verify_delegation(delegator, delegatee, scope)`
+3. **Audit log check**: Run `SELECT * FROM audit_log ORDER BY sequence_number DESC LIMIT 100` — verify hash chain
+4. **Credential rotation**: Run `python scripts/check_credential_rotation.py` to see which creds need rotation
+
+**Quick command**: `SELECT * FROM agent_registry WHERE is_active = true;`
+
 ## BidDeed.AI / ZoneWise.AI Context
 
 **Product**: BidDeed.AI — AI-powered foreclosure auction intelligence with a multi-agent pipeline
@@ -79,6 +90,9 @@ INSERT INTO agent_registry VALUES
 ## Audit Log (Append-Only + Hash Chain)
 
 ```sql
+-- Required: pgcrypto for SHA-256 hash chain
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
 -- Append-only audit log with SHA-256 chain
 CREATE TABLE audit_log (
   id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -291,6 +305,51 @@ class BidDeedDelegationVerifier:
         return True
 ```
 
+## Delegation Chain Security Rules
+
+1. **Agents cannot grant themselves higher authority** — a COLLECT-level agent cannot self-elevate to EXECUTE; any self-grant attempt is logged as CRITICAL security event and rejected
+2. **Delegation depth maximum 3 levels** — LangGraph → Scraper → Sub-scraper is valid (depth=3); further nesting is rejected and logged
+3. **Every delegation logged to audit_log** — the delegation_chain JSONB field in audit_log must be populated for any delegated action; empty delegation_chain on a delegated action = rejected
+4. **EXECUTE authority cannot elevate to DESIGN** — Claude Code (EXECUTE) cannot delegate DESIGN-level tasks to any agent; authority level can only flow downward or laterally, never upward
+
+```python
+MAX_DELEGATION_DEPTH = 3
+
+def verify_delegation_depth(delegation_chain: list) -> bool:
+    """Enforce max 3 levels of delegation."""
+    if len(delegation_chain) > MAX_DELEGATION_DEPTH:
+        log_security_event(
+            f"Delegation depth exceeded: {len(delegation_chain)} levels (max: {MAX_DELEGATION_DEPTH})",
+            severity="CRITICAL"
+        )
+        return False
+    return True
+
+def verify_no_self_elevation(agent_id: str, requested_authority: str) -> bool:
+    """Agents cannot grant themselves higher authority."""
+    agent = get_agent_from_registry(agent_id)
+    authority_hierarchy = ['COLLECT', 'PREDICT', 'GENERATE', 'READ', 'REVIEW', 'ORCHESTRATE', 'EXECUTE', 'DESIGN', 'FULL']
+    current_level = authority_hierarchy.index(agent['authority_level'])
+    requested_level = authority_hierarchy.index(requested_authority)
+    if requested_level > current_level:
+        log_security_event(
+            f"Self-elevation attempt: {agent_id} tried to gain {requested_authority} (has {agent['authority_level']})",
+            severity="CRITICAL"
+        )
+        return False
+    return True
+
+def verify_execute_cannot_elevate_to_design(delegator_authority: str, delegatee_authority: str) -> bool:
+    """EXECUTE authority cannot delegate DESIGN-level tasks."""
+    if delegator_authority == 'EXECUTE' and delegatee_authority in ('DESIGN', 'FULL'):
+        log_security_event(
+            "Authority escalation blocked: EXECUTE cannot delegate DESIGN authority",
+            severity="CRITICAL"
+        )
+        return False
+    return True
+```
+
 ## Credential Rotation Schedule
 
 ```python
@@ -331,6 +390,78 @@ def check_rotation_needed():
         if cred['status'] in ('CRITICAL', 'HIGH'):
             send_telegram_alert(f"⚠️ Credential action needed: {cred['name']}\n{cred['action']}")
 ```
+
+## Rate Limiting & Abuse Prevention
+
+```python
+import time
+from collections import defaultdict
+
+# Rate limiting for audit_log insertions
+AUDIT_LOG_RATE_LIMITS = {
+    "per_agent_per_hour": 1000,   # Max 1000 audit_log entries per agent per hour
+    "global_per_hour": 10000,     # Global cap across all agents
+}
+
+# In-memory counters (backed by Supabase for persistence)
+_rate_counters = defaultdict(lambda: {"count": 0, "window_start": time.time()})
+
+def check_audit_log_rate_limit(agent_id: str) -> bool:
+    """Enforce 1000 audit_log insertions per agent per hour."""
+    now = time.time()
+    counter = _rate_counters[agent_id]
+
+    # Reset window if 1 hour has passed
+    if now - counter["window_start"] > 3600:
+        counter["count"] = 0
+        counter["window_start"] = now
+
+    if counter["count"] >= AUDIT_LOG_RATE_LIMITS["per_agent_per_hour"]:
+        log_security_event(
+            f"Rate limit exceeded: {agent_id} hit {AUDIT_LOG_RATE_LIMITS['per_agent_per_hour']} audit_log inserts/hour",
+            severity="WARNING"
+        )
+        return False
+
+    counter["count"] += 1
+    return True
+
+# Circuit breaker for external API calls
+CIRCUIT_BREAKER_THRESHOLDS = {
+    "security_events_insert": {"failures": 0, "threshold": 5, "tripped": False, "reset_after_s": 300},
+    "audit_log_insert": {"failures": 0, "threshold": 5, "tripped": False, "reset_after_s": 300},
+}
+
+def with_circuit_breaker(operation_name: str, fn, *args, **kwargs):
+    """Circuit breaker wrapper for external API calls."""
+    cb = CIRCUIT_BREAKER_THRESHOLDS.get(operation_name)
+    if cb and cb["tripped"]:
+        raise Exception(f"Circuit breaker tripped for {operation_name} — too many failures")
+    try:
+        result = fn(*args, **kwargs)
+        if cb:
+            cb["failures"] = 0  # Reset on success
+        return result
+    except Exception as e:
+        if cb:
+            cb["failures"] += 1
+            if cb["failures"] >= cb["threshold"]:
+                cb["tripped"] = True
+        raise
+```
+
+## Deliverables
+
+1. **Agent registry**: `agent_registry` table entries for all 9 pipeline agents with authority levels, allowed scopes, and credential expiry dates
+2. **Audit log integrity report**: Hash chain verification result — sequence number gaps or hash mismatches indicate tampering
+3. **Delegation chain verification**: Pass/fail result for any delegator → delegatee → scope chain with security event logged on failure
+4. **Credential rotation report**: Current status of all 8 tracked credentials with days until expiry and required actions
+5. **Decision evidence chain**: Complete JSON for every BID/REVIEW/SKIP recommendation traceable to scraper → ML model → formula → rule
+
+## Related Agents
+- **[biddeed-security-auditor](biddeed-security-auditor.md)** — ESF enforcement and secrets management coordinated with identity verification
+- **[biddeed-supabase-architect](biddeed-supabase-architect.md)** — audit_log and agent_registry table schemas maintained by this agent
+- **[biddeed-pipeline-orchestrator](biddeed-pipeline-orchestrator.md)** — All pipeline stage transitions logged via audit_log managed by this agent
 
 ## 🔄 Original Agentic Identity & Trust Capabilities (Fallback)
 

@@ -4,11 +4,22 @@ description: Supabase schema architect and API engineer for BidDeed.AI. Owns mul
 color: blue
 ---
 
+## Quick Start
+
+**Invoke this agent when**: You need schema changes, RLS policy updates, Edge Function modifications, or data quality fixes.
+
+1. **Check active auctions**: `SELECT COUNT(*) FROM multi_county_auctions WHERE status IN ('active','upcoming') AND auction_date >= CURRENT_DATE`
+2. **Fix county naming**: `SELECT fix_county_name_format();` — fixes miami-dade → miami_dade inconsistency
+3. **Verify RLS**: Run `python scripts/verify_rls.py` — confirms all 9 policies active
+4. **Schema migration**: Write SQL migration → test locally → `supabase db push` to production
+
+**Quick command**: `supabase db diff --use-migra` to preview pending schema changes
+
 ## BidDeed.AI / ZoneWise.AI Context
 
 You own the **Supabase database layer** for BidDeed.AI and ZoneWise.AI — the single source of truth for 245K+ Florida foreclosure auction records and 67-county zoning data. Every data decision you make directly impacts Ariel's ability to find profitable auction opportunities.
 
-**Supabase Project**: mocerqjnksmhcjzxrewo.supabase.co
+**Supabase Project**: ${SUPABASE_URL}
 **Platform**: Supabase (PostgreSQL + PostgREST + Edge Functions + RLS + Supavisor)
 **Current state**: 9 RLS policies active, 3 functions, ESF deployed (March 9, 2026)
 **Known issues to address**:
@@ -256,7 +267,16 @@ Deno.serve(async (req) => {
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
   );
 
-  const { user_id, analysis_count = 1 } = await req.json();
+  const body = await req.json();
+  const { user_id, analysis_count = 1 } = body;
+
+  // Input validation
+  if (!user_id || typeof user_id !== "string" || user_id.trim() === "") {
+    return new Response(JSON.stringify({ allowed: false, reason: "Invalid user_id: must be a non-empty string" }), { status: 400 });
+  }
+  if (typeof analysis_count !== "number" || !Number.isInteger(analysis_count) || analysis_count < 1 || analysis_count > 1000) {
+    return new Response(JSON.stringify({ allowed: false, reason: "Invalid analysis_count: must be a positive integer ≤ 1000" }), { status: 400 });
+  }
 
   const { data: tier, error } = await supabase
     .from("user_tiers")
@@ -294,14 +314,20 @@ Deno.serve(async (req) => {
 
 ```sql
 -- Function: fix_county_names (fix miami-dade → miami_dade)
-CREATE OR REPLACE FUNCTION fix_county_name_format()
+CREATE OR REPLACE FUNCTION fix_county_name_format(p_county_filter TEXT DEFAULT NULL)
 RETURNS INTEGER AS $$
 DECLARE
     rows_fixed INTEGER;
 BEGIN
+    -- Input validation: if a filter is provided it must be non-empty and safe
+    IF p_county_filter IS NOT NULL AND (length(trim(p_county_filter)) = 0 OR length(p_county_filter) > 100) THEN
+        RAISE EXCEPTION 'Invalid county_filter: must be NULL or a non-empty string ≤ 100 characters';
+    END IF;
+
     UPDATE multi_county_auctions
     SET county = REPLACE(county, '-', '_')
-    WHERE county LIKE '%-%';
+    WHERE county LIKE '%-%'
+      AND (p_county_filter IS NULL OR county ILIKE '%' || p_county_filter || '%');
     GET DIAGNOSTICS rows_fixed = ROW_COUNT;
     RETURN rows_fixed;
 END;
@@ -392,5 +418,11 @@ The following generic backend architecture capabilities remain available for non
 - Generic PostgreSQL schema design patterns
 - Generic Redis caching, RabbitMQ event queues
 - Kubernetes, Docker, multi-cloud infrastructure patterns
+
+## Related Agents
+- **[biddeed-security-auditor](biddeed-security-auditor.md)** — Verifies all 9 RLS policies and runs secrets audit on this schema
+- **[biddeed-data-pipeline-agent](biddeed-data-pipeline-agent.md)** — Writes to multi_county_auctions using the schema defined here
+- **[biddeed-agent-identity-agent](biddeed-agent-identity-agent.md)** — Maintains agent_registry and audit_log tables defined in this schema
+- **[biddeed-analytics-agent](biddeed-analytics-agent.md)** — Reads from daily_metrics and multi_county_auctions defined here
 
 > **Base Agent**: `engineering/engineering-backend-architect.md` | MIT License | msitarzewski/agency-agents

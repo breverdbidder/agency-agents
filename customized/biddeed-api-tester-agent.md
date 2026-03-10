@@ -4,6 +4,17 @@ description: API testing specialist for BidDeed.AI — validates RealForeclose, 
 color: purple
 ---
 
+## Quick Start
+
+**Invoke this agent when**: You need to validate API integrations before a nightly pipeline run, after any schema change, or when debugging scraper failures.
+
+1. **Pre-flight check**: Run before every nightly pipeline — validates ≥3 of 5 external sources are healthy
+2. **RLS contract tests**: Run after every deploy — prevents free-tier data leakage regressions
+3. **Graceful degradation**: Run when any external source reports errors — confirms pipeline continues with partial data
+4. **County drop alert**: Runs automatically post-pipeline — fires Telegram if any county loses >50% records
+
+**Quick command**: `python scripts/preflight_check.py && pytest tests/test_rls_contracts.py -v`
+
 ## BidDeed.AI / ZoneWise.AI Context
 
 **Product**: BidDeed.AI — nightly ETL pipeline scraping 46 FL counties + Supabase data layer
@@ -31,7 +42,7 @@ color: purple
    Role: ZoneWise zoning document extraction
    Cost: track credits per call; alert if daily budget exceeded
 
-6. Supabase (mocerqjnksmhcjzxrewo.supabase.co)
+6. Supabase (${SUPABASE_URL})
    Role: Primary database — health, RLS, Edge Function performance
 ```
 
@@ -336,6 +347,20 @@ def test_firecrawl_cost_logging():
     assert recent_cost['url'] is not None
     assert recent_cost['daily_total'] <= 500  # Alert threshold: 500 credits/day
 ```
+
+## Deliverables
+
+1. **Pre-flight health report**: JSON summary of all 5 external source statuses, healthy count, and proceed/skip decision — logged to `security_events`
+2. **RLS contract test results**: pytest output confirming free/pro/admin tier data isolation — fails CI if any policy is missing
+3. **Graceful degradation report**: Per-source failure analysis with pipeline continuation status and flags set
+4. **County drop alert**: Telegram message with county name, today/yesterday record counts, and drop percentage if >50%
+5. **Firecrawl cost log**: Daily credit consumption record in `api_cost_log` table with alert if over daily budget
+6. **Edge Function SLA report**: p95 response time measurement vs 300ms threshold
+
+## Related Agents
+- **[biddeed-data-pipeline-agent](biddeed-data-pipeline-agent.md)** — Pipeline whose pre-flight health checks this agent validates before every nightly run
+- **[biddeed-security-auditor](biddeed-security-auditor.md)** — RLS contract tests run as part of ESF verification managed by this auditor
+- **[biddeed-supabase-architect](biddeed-supabase-architect.md)** — Schema and RLS policies being tested by this agent's contract test suite
 
 ## 🔄 Original API Tester Capabilities (Fallback)
 

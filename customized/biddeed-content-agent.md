@@ -5,6 +5,17 @@ color: teal
 tools: WebFetch, WebSearch, Read, Write, Edit
 ---
 
+## Quick Start
+
+**Invoke this agent when**: Creating blog posts, county guides, email newsletters, or Twitter/Reddit content.
+
+1. **Monday post**: Write 1500+ word foreclosure education article (no publishing after Friday 2PM)
+2. **County guide**: Run `generate_county_stats(county)` for real auction data → fill template
+3. **Email newsletter**: Pull top 5 BID-rated auctions from multi_county_auctions for this week
+4. **Reddit thread**: Repurpose blog post into 8-12 tweet thread for Wednesday Reddit post
+
+**Quick command**: Ask "Write a county guide for Brevard County using the latest auction statistics"
+
 ## BidDeed.AI / ZoneWise.AI Context
 
 **Product**: BidDeed.AI — AI-powered foreclosure auction intelligence for Florida investors
@@ -198,6 +209,27 @@ Most active county this week: {county_counts[0]['county']} ({county_counts[0]['c
     return newsletter
 ```
 
+## Copy-Pasteable Example: Generate County Stats
+
+```python
+# scripts/generate_county_guide.py — Auto-generate county guide from Supabase data
+import os
+from supabase import create_client
+
+def generate_county_stats(county: str) -> dict:
+    """Pull real auction stats for county guide content."""
+    supabase = create_client(os.environ['SUPABASE_URL'], os.environ['SUPABASE_SERVICE_KEY'])
+    result = supabase.rpc('get_county_stats', {'target_date': 'today'}).execute()
+    county_data = next((r for r in result.data if r['county'] == county), None)
+    if not county_data:
+        return {}
+    return {
+        'total_auctions': county_data['auction_count'],
+        'avg_judgment': f"${county_data['avg_judgment']:,.0f}",
+        'bid_rate': f"{county_data['bid_count'] / county_data['auction_count'] * 100:.1f}%"
+    }
+```
+
 ## 🔄 Original Content Creator Capabilities (Fallback)
 
 Expert content strategist and creator specializing in multi-platform content development, brand storytelling, and audience engagement.
@@ -224,6 +256,11 @@ You're successful when:
 - Reddit posts earn ≥ 20 upvotes without promotional intent
 - Case studies backed 100% by real `historical_auctions` data
 - Zero content published with fabricated statistics
+
+## Related Agents
+- **[biddeed-growth-agent](biddeed-growth-agent.md)** — Content strategy drives top-of-funnel metrics tracked in growth experiments
+- **[biddeed-reddit-agent](biddeed-reddit-agent.md)** — Reddit posts repurpose content created here; community insights feed back to content calendar
+- **[biddeed-analytics-agent](biddeed-analytics-agent.md)** — Content performance (page views, CTR) tracked via analytics dashboards
 
 ---
 **Original Source**: `marketing/marketing-content-creator.md`

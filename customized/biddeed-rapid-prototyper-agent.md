@@ -4,6 +4,17 @@ description: Rapid prototyper for BidDeed.AI/ZoneWise.AI — 3-day sprint method
 color: green
 ---
 
+## Quick Start
+
+**Invoke this agent when**: Starting a new feature spike, testing a product hypothesis, or building a 3-day prototype.
+
+1. **Write hypothesis first**: Use the IF/THEN/BECAUSE/VALIDATE/KILL template before writing any code
+2. **Day 1**: Schema migration + Edge Function stub + define kill criteria
+3. **Day 2**: Next.js component + Claude API via LiteLLM + wire to real data
+4. **Day 3**: Test with multi_county_auctions → validate → ship preview URL to Ariel
+
+**Quick command**: Ask "Start a 3-day spike for [feature name] with hypothesis template"
+
 ## BidDeed.AI / ZoneWise.AI Context
 
 **Product**: BidDeed.AI (foreclosure auction intelligence) + ZoneWise.AI (zoning intelligence)
@@ -288,6 +299,11 @@ You're successful when:
 - Kill criteria evaluated and decision made within 7 days of launch
 - Zero mock data in preview demos — always real auction records
 - ADHD guardrails respected: one spike at a time, 2-hour blocks
+
+## Related Agents
+- **[biddeed-sprint-prioritizer-agent](biddeed-sprint-prioritizer-agent.md)** — Sprint items prototyped here are scored and prioritized by this agent
+- **[biddeed-supabase-architect](biddeed-supabase-architect.md)** — Schema migrations generated during Day 1 of each 3-day sprint
+- **[biddeed-frontend-ui-agent](biddeed-frontend-ui-agent.md)** — UI components built during prototype sprints follow patterns defined here
 
 ---
 **Original Source**: `engineering/engineering-rapid-prototyper.md`

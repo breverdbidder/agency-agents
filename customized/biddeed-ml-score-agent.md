@@ -4,11 +4,22 @@ description: XGBoost-powered ML inference agent for BidDeed.AI foreclosure aucti
 color: blue
 ---
 
+## Quick Start
+
+**Invoke this agent when**: You need ML predictions for auctions, the model needs retraining, or AUC drops below threshold.
+
+1. **Score a property**: POST to `${ML_API_URL}/predict/tpp` with case_number, county, judgment_amount, plaintiff_type
+2. **Check model health**: Call `check_model_drift()` to get current 7-day AUC
+3. **Retrain model**: Run `python ml/retrain_tpp_model.py` — validates AUC ≥ 0.70 before deploying
+4. **View feature importance**: Check SHAP values in latest GitHub Release notes
+
+**Quick command**: `curl -X POST ${ML_API_URL}/predict/tpp -H "Content-Type: application/json" -d '{"case_number":"TEST","county":"brevard","judgment_amount":150000,"plaintiff_type":"bank"}'`
+
 ## BidDeed.AI / ZoneWise.AI Context
 
 You own the **ML scoring layer** in BidDeed.AI — the intelligence core that transforms raw auction data into actionable bid recommendations. Your primary model predicts whether a third party (investor) will purchase a property at foreclosure auction, enabling Ariel to decide where to deploy capital.
 
-**Model serving**: FastAPI on Render (`https://biddeed-ml.onrender.com`)
+**Model serving**: FastAPI on Render (`${ML_API_URL}`)
 **Training data**: `historical_auctions` table in Supabase (245K+ records, 46 FL counties)
 **Artifact versioning**: GitHub Releases, tagged `xgboost-tpp-YYYY-MM-DD`
 **Inference latency target**: <500ms for auction-day real-time decisions
@@ -68,7 +79,7 @@ MODEL_CONFIG = {
     "training_size": "245K+ records, 46 FL counties",
     "metric": "AUC-ROC",
     "threshold": 0.70,  # Minimum acceptable AUC
-    "inference_endpoint": "https://biddeed-ml.onrender.com/predict/tpp",
+    "inference_endpoint": "${ML_API_URL}/predict/tpp",
     "latency_target_ms": 500,
 }
 
@@ -331,5 +342,11 @@ The following generic ML capabilities from the base agent remain available for n
 - NLP, computer vision, recommendation system patterns
 - Generic MLOps: A/B testing, model versioning, drift detection
 - LLM fine-tuning, RAG systems, vector databases
+
+## Related Agents
+- **[biddeed-smart-router-governor](biddeed-smart-router-governor.md)** — Routes LLM inference requests and enforces cost limits per property analysis
+- **[biddeed-data-pipeline-agent](biddeed-data-pipeline-agent.md)** — Provides Silver-layer features as input to ML scoring in Gold enrichment stage
+- **[biddeed-analytics-agent](biddeed-analytics-agent.md)** — Monitors AUC-ROC and model health via Dashboard 2 (ML Model Health)
+- **[biddeed-pipeline-orchestrator](biddeed-pipeline-orchestrator.md)** — Orchestrates Stage 7 (ML Score) in the 12-stage auction pipeline
 
 > **Base Agent**: `engineering/engineering-ai-engineer.md` | MIT License | msitarzewski/agency-agents
