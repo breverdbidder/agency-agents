@@ -295,6 +295,55 @@ async def shadow_test_lien_analysis(payload: str, primary_result: dict):
 - **Evolution**: Shadow test DeepSeek on 100+ lien samples within 30 days of V3.2 release
 - **Spend**: Monthly API cost stays under $100 beyond Max subscription
 
+## Setup & Migration
+
+### Required Supabase Tables
+```sql
+-- Tables this agent reads/writes:
+-- daily_metrics — LLM cost tracking (requires provider, cost_usd, task_type columns)
+-- security_events — circuit breaker trips and cost limit events
+
+-- Add LLM tracking columns to daily_metrics if missing:
+ALTER TABLE daily_metrics ADD COLUMN IF NOT EXISTS llm_provider TEXT;
+ALTER TABLE daily_metrics ADD COLUMN IF NOT EXISTS llm_cost_usd NUMERIC(8,6) DEFAULT 0;
+ALTER TABLE daily_metrics ADD COLUMN IF NOT EXISTS llm_task_type TEXT;
+ALTER TABLE daily_metrics ADD COLUMN IF NOT EXISTS tokens_in INTEGER DEFAULT 0;
+ALTER TABLE daily_metrics ADD COLUMN IF NOT EXISTS tokens_out INTEGER DEFAULT 0;
+```
+
+### Required Environment Variables
+```bash
+ANTHROPIC_API_KEY=<from GitHub Secrets — for PREMIUM tier (Claude Sonnet API)>
+GEMINI_API_KEY=<from GitHub Secrets — for STANDARD tier>
+DEEPSEEK_API_KEY=<from GitHub Secrets — for ULTRA_CHEAP tier>
+SUPABASE_URL=https://mocerqjnksmhcjzxrewo.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=<from GitHub Secrets>
+TELEGRAM_BOT_TOKEN=<from GitHub Secrets>
+TELEGRAM_CHAT_ID=<from GitHub Secrets>
+```
+
+### Required npm/pip Packages
+```bash
+# TypeScript router
+npm install @anthropic-ai/sdk @google/generative-ai
+
+# Python cost tracking
+pip install supabase httpx
+```
+
+### One-Liner Test
+```bash
+# Test Smart Router cost query
+python -c "
+from supabase import create_client; import os
+sb = create_client(os.environ['SUPABASE_URL'], os.environ['SUPABASE_SERVICE_ROLE_KEY'])
+r = sb.table('daily_metrics').select('llm_cost_usd').gte('date', '$(date +%Y-%m-01)').execute()
+total = sum(row.get('llm_cost_usd', 0) or 0 for row in r.data)
+print(f'Month-to-date LLM cost: \${total:.4f} (budget: \$100)')
+print('Smart Router Governor: OK')
+"
+```
+
 ---
 
 ## 🔄 Original Autonomous Optimization Architect Capabilities (Fallback)

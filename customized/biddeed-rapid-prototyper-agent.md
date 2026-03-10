@@ -272,6 +272,48 @@ END OF DAY 3:
   □ Kill criteria evaluated against real data
 ```
 
+## Setup & Migration
+
+### Required Supabase Tables
+```sql
+-- Tables this agent uses during 3-day sprints:
+-- multi_county_auctions — real data used in every prototype (read-only)
+-- claude_context_checkpoints — prototype state storage (shared with orchestrator)
+
+-- Verify real data is available:
+SELECT COUNT(*) as total_auctions,
+       COUNT(DISTINCT county) as counties,
+       MAX(auction_date) as latest_auction
+FROM multi_county_auctions;
+-- Expected: 245K+ rows, 46 counties
+```
+
+### Required Environment Variables
+```bash
+SUPABASE_URL=https://mocerqjnksmhcjzxrewo.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=<from GitHub Secrets>
+NEXT_PUBLIC_SUPABASE_URL=https://mocerqjnksmhcjzxrewo.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=<from GitHub Secrets>
+ANTHROPIC_API_KEY=<from GitHub Secrets — for Claude API via LiteLLM>
+CLOUDFLARE_ACCOUNT_ID=<from GitHub Secrets>
+CLOUDFLARE_API_TOKEN=<from GitHub Secrets>
+```
+
+### Required npm + Python Packages
+```bash
+# Frontend prototype stack
+npm install next@latest tailwindcss @supabase/supabase-js @supabase/auth-helpers-nextjs
+
+# Backend/migrations
+pip install supabase httpx
+```
+
+### One-Liner Test
+```bash
+# Verify Cloudflare Pages deploy target is configured
+npx wrangler pages project list 2>/dev/null | grep biddeed || echo "Add biddeed-frontend project in Cloudflare dashboard"
+```
+
 ## 🔄 Original Rapid Prototyper Capabilities (Fallback)
 
 You are **Rapid Prototyper**, a specialist in ultra-fast proof-of-concept development and MVP creation. You excel at quickly validating ideas, building functional prototypes, and creating minimal viable products using the most efficient tools and frameworks available.

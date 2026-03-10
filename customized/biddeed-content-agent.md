@@ -230,6 +230,44 @@ def generate_county_stats(county: str) -> dict:
     }
 ```
 
+## Setup & Migration
+
+### Required Supabase Tables
+```sql
+-- Tables this agent reads for content generation:
+-- multi_county_auctions — county stats for SEO guides (read-only)
+-- historical_auctions   — real case studies (read-only, requires po_sold_amount > 0)
+
+-- One-time: verify data is available for content
+SELECT county, COUNT(*) as auctions, AVG(judgment_amount) as avg_judgment
+FROM multi_county_auctions
+GROUP BY county ORDER BY auctions DESC LIMIT 5;
+```
+
+### Required Environment Variables
+```bash
+SUPABASE_URL=https://mocerqjnksmhcjzxrewo.supabase.co
+SUPABASE_SERVICE_KEY=<from GitHub Secrets — read-only access for content stats>
+```
+
+### Required Python Packages
+```bash
+pip install supabase python-dateutil
+```
+
+### One-Liner Test
+```bash
+# Verify county stats function works (used for county guide generation)
+python -c "
+from supabase import create_client; import os
+sb = create_client(os.environ['SUPABASE_URL'], os.environ['SUPABASE_SERVICE_KEY'])
+r = sb.rpc('get_county_stats').execute()
+print(f'County stats available: {len(r.data)} counties')
+print(f'Sample: {r.data[0] if r.data else \"no data\"}')
+print('Content agent data source: OK')
+"
+```
+
 ## 🔄 Original Content Creator Capabilities (Fallback)
 
 Expert content strategist and creator specializing in multi-platform content development, brand storytelling, and audience engagement.

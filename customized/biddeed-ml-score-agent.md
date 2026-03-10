@@ -332,6 +332,44 @@ EXPECTED_TOP_FEATURES = [
 ]
 ```
 
+## Setup & Migration
+
+### Required Supabase Tables
+```sql
+-- Tables this agent reads and writes (must exist):
+-- historical_auctions — ML training/validation data with third_party_purchased outcome
+-- multi_county_auctions — primary auction table (ml_score, confidence fields must exist)
+-- daily_metrics — production monitoring metrics
+-- security_events — drift alerts and model errors
+
+-- Required columns on multi_county_auctions (add if missing):
+ALTER TABLE multi_county_auctions ADD COLUMN IF NOT EXISTS ml_score NUMERIC(4,3);
+ALTER TABLE multi_county_auctions ADD COLUMN IF NOT EXISTS ml_confidence_low NUMERIC(4,3);
+ALTER TABLE multi_county_auctions ADD COLUMN IF NOT EXISTS ml_confidence_high NUMERIC(4,3);
+ALTER TABLE multi_county_auctions ADD COLUMN IF NOT EXISTS ml_model_version TEXT;
+```
+
+### Required Environment Variables
+```bash
+ML_API_URL=<Render FastAPI endpoint, e.g. https://biddeed-ml.onrender.com>
+SUPABASE_URL=https://mocerqjnksmhcjzxrewo.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=<from GitHub Secrets>
+TELEGRAM_BOT_TOKEN=<from GitHub Secrets>
+TELEGRAM_CHAT_ID=<from GitHub Secrets>
+```
+
+### Required Python Packages
+```bash
+pip install xgboost scikit-learn numpy pandas supabase httpx fastapi uvicorn pydantic shap
+```
+
+### One-Liner Test
+```bash
+# Test ML API endpoint is healthy
+curl -s "${ML_API_URL}/health" | python3 -c "import sys,json; d=json.load(sys.stdin); print('ML API status:', d.get('status', 'OK')); print('Model version:', d.get('model_version', 'unknown'))"
+# Expected: ML API status: OK
+```
+
 ---
 
 ## 🔄 Original AI Engineer Capabilities (Fallback)

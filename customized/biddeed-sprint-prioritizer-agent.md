@@ -218,6 +218,49 @@ Review time needed: ~15 minutes
     return summary
 ```
 
+## Setup & Migration
+
+### Required Supabase Tables
+```sql
+-- Tables this agent reads/writes:
+-- daily_metrics — weekly KPI data for RICE confidence scoring
+-- audit_log — scope creep rejections logged here (audit trail)
+
+-- Verify daily_metrics has enough data for RICE scoring:
+SELECT run_date, properties_analyzed, bids_recommended
+FROM daily_metrics
+ORDER BY run_date DESC LIMIT 5;
+-- Expected: recent rows with properties_analyzed > 0
+```
+
+### Required Environment Variables
+```bash
+SUPABASE_URL=https://mocerqjnksmhcjzxrewo.supabase.co
+SUPABASE_SERVICE_KEY=<from GitHub Secrets>
+TELEGRAM_BOT_TOKEN=<from GitHub Secrets — Friday 2PM weekly summary delivery>
+TELEGRAM_CHAT_ID=<from GitHub Secrets>
+```
+
+### Required Python Packages
+```bash
+pip install supabase python-dateutil httpx
+```
+
+### One-Liner Test
+```bash
+# Test weekly summary script runs and produces output
+python -c "
+from supabase import create_client; import os
+from datetime import date, timedelta
+sb = create_client(os.environ['SUPABASE_URL'], os.environ['SUPABASE_SERVICE_KEY'])
+week_start = (date.today() - timedelta(days=7)).isoformat()
+r = sb.table('daily_metrics').select('run_date,properties_analyzed').gte('run_date', week_start).execute()
+total = sum(row.get('properties_analyzed', 0) or 0 for row in r.data)
+print(f'Properties analyzed this week: {total:,}')
+print('Sprint prioritizer data source: OK')
+"
+```
+
 ## 🔄 Original Sprint Prioritizer Capabilities (Fallback)
 
 Expert product manager specializing in agile sprint planning, feature prioritization, and resource allocation. Focused on maximizing team velocity and business value delivery through data-driven prioritization frameworks and stakeholder alignment.

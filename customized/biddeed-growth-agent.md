@@ -218,6 +218,60 @@ def log_growth_experiment(name: str, hypothesis: str, metric: str, result: float
     }).execute()
 ```
 
+## Setup & Migration
+
+### Required Supabase Tables
+```sql
+-- Tables this agent reads/writes:
+-- user_tiers          — free/pro ratio tracking
+-- growth_experiments  — experiment log (create if not exists)
+-- daily_metrics       — conversion funnel metrics
+
+-- Create growth_experiments table:
+CREATE TABLE IF NOT EXISTS growth_experiments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  hypothesis TEXT NOT NULL,
+  metric TEXT NOT NULL,
+  baseline NUMERIC(8,4),
+  result NUMERIC(8,4),
+  lift_pct NUMERIC(6,2),
+  winner BOOLEAN DEFAULT false,
+  started_at TIMESTAMPTZ DEFAULT now(),
+  ended_at TIMESTAMPTZ,
+  notes TEXT
+);
+```
+
+### Required Environment Variables
+```bash
+SUPABASE_URL=https://mocerqjnksmhcjzxrewo.supabase.co
+SUPABASE_SERVICE_KEY=<from GitHub Secrets>
+TELEGRAM_BOT_TOKEN=<from GitHub Secrets>
+TELEGRAM_CHAT_ID=<from GitHub Secrets>
+```
+
+### Required Python Packages
+```bash
+pip install supabase python-dateutil
+```
+
+### One-Liner Test
+```bash
+# Check current free/pro user ratio
+python -c "
+from supabase import create_client; import os
+sb = create_client(os.environ['SUPABASE_URL'], os.environ['SUPABASE_SERVICE_KEY'])
+r = sb.table('user_tiers').select('tier').execute()
+from collections import Counter
+counts = Counter(row['tier'] for row in r.data)
+total = sum(counts.values())
+print(f'Free: {counts.get(\"free\", 0)} ({counts.get(\"free\", 0)/max(total,1)*100:.1f}%)')
+print(f'Pro: {counts.get(\"pro\", 0)} ({counts.get(\"pro\", 0)/max(total,1)*100:.1f}%)')
+print('Growth agent: OK')
+"
+```
+
 ## 🔄 Original Growth Hacker Capabilities (Fallback)
 
 Expert growth strategist specializing in rapid, scalable user acquisition and retention through data-driven experimentation and unconventional marketing tactics. Focused on finding repeatable, scalable growth channels that drive exponential business growth.

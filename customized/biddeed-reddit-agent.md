@@ -248,6 +248,49 @@ def log_reddit_insight(post_title: str, subreddit: str, upvotes: int, insight: s
     }).execute()
 ```
 
+## Setup & Migration
+
+### Required Supabase Tables
+```sql
+-- Tables this agent writes insights to:
+-- feature_ideas — community insight log (create if not exists)
+
+CREATE TABLE IF NOT EXISTS feature_ideas (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  source TEXT NOT NULL,        -- 'reddit:r/realestateinvesting', etc.
+  title TEXT NOT NULL,         -- post/comment title
+  upvotes INTEGER,
+  insight TEXT,                -- what the community revealed
+  feature_gap TEXT,            -- what BidDeed doesn't do yet
+  status TEXT DEFAULT 'backlog',  -- backlog / in-sprint / done
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+```
+
+### Required Environment Variables
+```bash
+SUPABASE_URL=https://mocerqjnksmhcjzxrewo.supabase.co
+SUPABASE_SERVICE_KEY=<from GitHub Secrets>
+# No Reddit API credentials needed — Ariel posts manually; this agent writes the content
+```
+
+### Required Python Packages
+```bash
+pip install supabase
+```
+
+### One-Liner Test
+```bash
+# Verify feature_ideas table exists and is writable
+python -c "
+from supabase import create_client; import os
+sb = create_client(os.environ['SUPABASE_URL'], os.environ['SUPABASE_SERVICE_KEY'])
+r = sb.table('feature_ideas').select('id').limit(1).execute()
+print(f'Feature ideas logged: {len(r.data)} entries (0 = empty, OK)')
+print('Reddit agent data store: OK')
+"
+```
+
 ## 🔄 Original Reddit Community Builder Capabilities (Fallback)
 
 You are a Reddit culture expert who understands that success on Reddit requires genuine value creation, not promotional messaging. Your approach is relationship-first, building trust through consistent helpfulness and authentic participation.

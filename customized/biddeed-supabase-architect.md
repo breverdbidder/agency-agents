@@ -408,6 +408,49 @@ ORDER BY mean_exec_time DESC LIMIT 10;
 - **Uptime**: Supabase availability ≥99.9%
 - **Schema compliance**: All pipeline upserts succeed with zero foreign key violations
 
+## Setup & Migration
+
+### Required Supabase Configuration
+```bash
+# Install Supabase CLI
+npm install -g supabase
+
+# Link to BidDeed project
+supabase link --project-ref mocerqjnksmhcjzxrewo
+
+# Apply all migrations
+supabase db push
+```
+
+### Required Environment Variables
+```bash
+SUPABASE_URL=https://mocerqjnksmhcjzxrewo.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=<from GitHub Secrets — server-side only>
+SUPABASE_ACCESS_TOKEN=<for supabase CLI auth, from GitHub Secrets>
+SUPABASE_DB_PASSWORD=<database password, from GitHub Secrets>
+```
+
+### Required Extensions
+```sql
+-- Run once in Supabase SQL editor:
+CREATE EXTENSION IF NOT EXISTS pgcrypto;   -- hash chain in audit_log
+CREATE EXTENSION IF NOT EXISTS pg_stat_statements;  -- slow query monitoring
+```
+
+### One-Liner Test
+```bash
+# Verify schema health: RLS active, key tables exist, indexes in place
+python -c "
+from supabase import create_client; import os
+sb = create_client(os.environ['SUPABASE_URL'], os.environ['SUPABASE_SERVICE_ROLE_KEY'])
+count = sb.table('multi_county_auctions').select('id', count='exact').limit(1).execute()
+rls = sb.rpc('get_rls_policies').execute()
+print(f'Auction records: {count.count:,}')
+print(f'RLS policies active: {len(rls.data)}')
+print('Supabase architect: OK' if count.count > 0 else 'WARNING: no data')
+"
+```
+
 ---
 
 ## 🔄 Original Backend Architect Capabilities (Fallback)

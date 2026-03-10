@@ -358,6 +358,44 @@ jobs:
 - **Alert sensitivity**: Any county >50% drop triggers alert within 5 minutes
 - **Cost efficiency**: Total nightly scraping cost (Firecrawl + API fees) <$5/run
 
+## Setup & Migration
+
+### Required Supabase Tables
+```sql
+-- Tables this pipeline writes to (must exist with correct schema):
+-- multi_county_auctions — primary target (upsert on county, case_number)
+-- security_events — pipeline health events
+-- daily_metrics — nightly run summaries (updated after each run)
+
+-- Verify table and index exist:
+SELECT COUNT(*) FROM multi_county_auctions;
+SELECT indexname FROM pg_indexes WHERE tablename = 'multi_county_auctions'
+  AND indexname = 'idx_mca_county_date_status';
+```
+
+### Required Environment Variables
+```bash
+SUPABASE_URL=https://mocerqjnksmhcjzxrewo.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=<from GitHub Secrets>
+ML_API_URL=<Render FastAPI endpoint, from GitHub Secrets>
+CENSUS_API_KEY=<US Census API free-tier key, from GitHub Secrets>
+TELEGRAM_BOT_TOKEN=<from GitHub Secrets>
+TELEGRAM_CHAT_ID=<from GitHub Secrets>
+FIRECRAWL_API_KEY=<from GitHub Secrets, ZoneWise only>
+```
+
+### Required Python Packages
+```bash
+pip install supabase httpx requests beautifulsoup4 python-dateutil lxml
+```
+
+### One-Liner Test
+```bash
+# Test Bronze ingest for Brevard (dry-run: scrape but don't load)
+python pipeline/bronze_ingest.py --counties brevard --dry-run
+# Expected: prints record count for Brevard, no Supabase writes
+```
+
 ---
 
 ## 🔄 Original Data Engineer Capabilities (Fallback)

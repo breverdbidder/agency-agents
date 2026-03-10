@@ -357,6 +357,124 @@ def test_firecrawl_cost_logging():
 5. **Firecrawl cost log**: Daily credit consumption record in `api_cost_log` table with alert if over daily budget
 6. **Edge Function SLA report**: p95 response time measurement vs 300ms threshold
 
+## GitHub Actions: API Validation Workflow
+
+```yaml
+# .github/workflows/api-validation.yml
+# Runs: on every PR to main + nightly before the scrape pipeline
+name: BidDeed API & RLS Validation
+
+on:
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "30 3 * * *"  # 10:30PM EST = 3:30AM UTC (30 min before nightly scrape)
+  workflow_dispatch:
+
+jobs:
+  preflight-check:
+    name: External Source Health Check
+    runs-on: ubuntu-latest
+    outputs:
+      proceed: ${{ steps.preflight.outputs.proceed }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+      - run: pip install supabase httpx requests
+      - name: Run pre-flight check
+        id: preflight
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
+        run: python scripts/preflight_check.py
+
+  rls-contract-tests:
+    name: RLS Contract Tests (Critical)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+      - run: pip install pytest supabase
+      - name: Run RLS contract tests
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          TEST_FREE_USER_TOKEN: ${{ secrets.TEST_FREE_USER_TOKEN }}
+          TEST_PRO_USER_TOKEN: ${{ secrets.TEST_PRO_USER_TOKEN }}
+        run: pytest tests/test_rls_contracts.py -v --tb=short
+        # FAILS CI if any free-user data isolation policy is broken
+
+  edge-function-sla:
+    name: Edge Function SLA Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+      - run: pip install supabase httpx
+      - name: Test Edge Function latency
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          TEST_PRO_USER_TOKEN: ${{ secrets.TEST_PRO_USER_TOKEN }}
+        run: python tests/test_edge_function_sla.py
+        # FAILS CI if p95 response > 500ms
+```
+
+## Setup & Migration
+
+### Required Supabase Tables
+```sql
+-- Tables this agent tests (must exist with correct RLS):
+-- multi_county_auctions — 9 RLS policies
+-- user_tiers            — tier + quota tracking
+-- security_events       — preflight health results logged here
+-- api_cost_log          — Firecrawl credit consumption tracking
+
+-- Create api_cost_log if not exists:
+CREATE TABLE IF NOT EXISTS api_cost_log (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  service TEXT NOT NULL,         -- 'firecrawl', 'litellm', etc.
+  url TEXT,
+  credits_consumed INTEGER,
+  daily_total INTEGER,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+```
+
+### Required Environment Variables
+```bash
+SUPABASE_URL=https://mocerqjnksmhcjzxrewo.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=<from GitHub Secrets>
+SUPABASE_ANON_KEY=<from GitHub Secrets>
+TEST_FREE_USER_TOKEN=<test account JWT, free tier>
+TEST_PRO_USER_TOKEN=<test account JWT, pro tier>
+FIRECRAWL_API_KEY=<from GitHub Secrets, ZoneWise only>
+TELEGRAM_BOT_TOKEN=<from GitHub Secrets>
+TELEGRAM_CHAT_ID=<from GitHub Secrets>
+```
+
+### Required Python Packages
+```bash
+pip install pytest supabase requests httpx
+```
+
+### One-Liner Test
+```bash
+# Run full pre-flight + RLS contract test suite
+python scripts/preflight_check.py && pytest tests/test_rls_contracts.py -v -x
+# Expected: all sources healthy, all RLS contract tests pass
+```
+
 ## Related Agents
 - **[biddeed-data-pipeline-agent](biddeed-data-pipeline-agent.md)** — Pipeline whose pre-flight health checks this agent validates before every nightly run
 - **[biddeed-security-auditor](biddeed-security-auditor.md)** — RLS contract tests run as part of ESF verification managed by this auditor

@@ -302,6 +302,48 @@ def check_sources():
     return proceed
 ```
 
+## Setup & Migration
+
+### Required GitHub Secrets (all repos)
+```bash
+# Required in breverdbidder/agency-agents and breverdbidder/biddeed-ai:
+SUPABASE_URL                  # Supabase project URL
+SUPABASE_SERVICE_ROLE_KEY     # Server-side only (never in Pages env)
+SUPABASE_ANON_KEY             # Safe to expose via NEXT_PUBLIC_
+SUPABASE_ACCESS_TOKEN         # For supabase CLI migrations
+SUPABASE_DB_PASSWORD          # For supabase db push
+ML_API_URL                    # Render FastAPI endpoint
+RENDER_ML_DEPLOY_HOOK         # Render deploy hook URL
+ANTHROPIC_API_KEY             # LiteLLM Smart Router
+CENSUS_API_KEY                # US Census API free-tier
+FIRECRAWL_API_KEY             # ZoneWise scraping
+MAPBOX_TOKEN                  # Frontend maps (URL-restrict to *.biddeed.ai)
+TELEGRAM_BOT_TOKEN            # Pipeline completion alerts
+TELEGRAM_CHAT_ID              # Ariel's chat ID
+PAT_ISSUE_DATE                # ISO date when current PAT was created
+CLOUDFLARE_API_TOKEN          # Pages deploy
+CLOUDFLARE_ACCOUNT_ID         # Pages deploy
+```
+
+### Required Tools
+```bash
+# GitHub CLI
+gh auth login
+
+# Supabase CLI
+npm install -g supabase
+
+# Cloudflare Wrangler (for Pages)
+npm install -g wrangler
+```
+
+### One-Liner Test
+```bash
+# Verify GitHub Actions workflows are all active
+gh workflow list --repo breverdbidder/biddeed-ai | grep -E "active|enabled"
+# Expected: nightly-scrape, deploy-frontend, db-migrate all listed
+```
+
 ## 🔄 Original DevOps Automator Capabilities (Fallback)
 
 You are **DevOps Automator**, an expert DevOps engineer who specializes in infrastructure automation, CI/CD pipeline development, and cloud operations. You streamline development workflows, ensure system reliability, and implement scalable deployment strategies.

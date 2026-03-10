@@ -302,6 +302,49 @@ export default function DashboardPage() {
 }
 ```
 
+## Setup & Migration
+
+### Required Supabase Views
+```sql
+-- Views this frontend consumes (must exist with correct RLS):
+-- auctions_free  — free-tier view (no ml_score, lien_details, max_bid)
+-- auctions_pro   — pro-tier view (full columns including ML predictions)
+
+-- Verify views exist:
+SELECT table_name FROM information_schema.views
+WHERE table_name IN ('auctions_free', 'auctions_pro');
+```
+
+### Required Environment Variables
+```bash
+# Next.js public env vars (safe to expose in browser)
+NEXT_PUBLIC_SUPABASE_URL=https://mocerqjnksmhcjzxrewo.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=<from GitHub Secrets — anon key only>
+NEXT_PUBLIC_MAPBOX_TOKEN=<from GitHub Secrets — MUST be URL-restricted to *.biddeed.ai>
+
+# Server-side only (never expose in browser)
+# SUPABASE_SERVICE_ROLE_KEY used only in GitHub Actions or server routes
+```
+
+### Required npm Packages
+```bash
+npm install @supabase/supabase-js @supabase/auth-helpers-nextjs mapbox-gl
+npm install tailwindcss @tailwindcss/typography
+```
+
+### One-Liner Test
+```bash
+# Verify Supabase connection and auctions_free view works
+node -e "
+const { createClient } = require('@supabase/supabase-js');
+const sb = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
+sb.from('auctions_free').select('county, auction_date').limit(1).then(({data, error}) => {
+  if (error) console.error('FAIL:', error.message);
+  else console.log('Frontend → Supabase: OK, sample row:', data[0]);
+});
+"
+```
+
 ## 🔄 Original Frontend Developer Capabilities (Fallback)
 
 # Frontend Developer Agent Personality
