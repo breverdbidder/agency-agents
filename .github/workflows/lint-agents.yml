@@ -5,7 +5,9 @@ on:
     paths:
       - 'design/**'
       - 'engineering/**'
+      - 'game-development/**'
       - 'marketing/**'
+      - 'paid-media/**'
       - 'product/**'
       - 'project-management/**'
       - 'testing/**'
@@ -27,10 +29,14 @@ jobs:
         id: changed
         run: |
           FILES=$(git diff --name-only --diff-filter=ACMR origin/${{ github.base_ref }}...HEAD -- \
-            'design/*.md' 'engineering/*.md' 'marketing/*.md' 'product/*.md' \
-            'project-management/*.md' 'testing/*.md' 'support/*.md' \
-            'spatial-computing/*.md' 'specialized/*.md' 'strategy/*.md')
-          echo "files=$FILES" >> "$GITHUB_OUTPUT"
+            'design/**/*.md' 'engineering/**/*.md' 'game-development/**/*.md' 'marketing/**/*.md' 'paid-media/**/*.md' 'product/**/*.md' \
+            'project-management/**/*.md' 'testing/**/*.md' 'support/**/*.md' \
+            'spatial-computing/**/*.md' 'specialized/**/*.md' 'strategy/**/*.md')
+          {
+            echo "files<<ENDOFLIST"
+            echo "$FILES"
+            echo "ENDOFLIST"
+          } >> "$GITHUB_OUTPUT"
           if [ -z "$FILES" ]; then
             echo "No agent files changed."
           else
