@@ -1,0 +1,502 @@
+[
+  {
+    "case_number": "05-2026-CA-000000",
+    "county": "brevard",
+    "judgment_amount": 150000,
+    "market_value": 250000,
+    "plaintiff": "Wells Fargo",
+    "sale_date": "2026-04-01",
+    "status": "active",
+    "parcel_id": "25-36-00-00-0000"
+  },
+  {
+    "case_number": "05-2026-CA-000001",
+    "county": "brevard",
+    "judgment_amount": 160000,
+    "market_value": 265000,
+    "plaintiff": "HOA",
+    "sale_date": "2026-04-01",
+    "status": "active",
+    "parcel_id": "25-36-01-00-0001"
+  },
+  {
+    "case_number": "05-2026-CA-000002",
+    "county": "brevard",
+    "judgment_amount": 170000,
+    "market_value": 280000,
+    "plaintiff": "Tax Collector",
+    "sale_date": "2026-04-01",
+    "status": "active",
+    "parcel_id": "25-36-02-00-0002"
+  },
+  {
+    "case_number": "05-2026-CA-000003",
+    "county": "brevard",
+    "judgment_amount": 180000,
+    "market_value": 295000,
+    "plaintiff": "Wells Fargo",
+    "sale_date": "2026-04-01",
+    "status": "active",
+    "parcel_id": "25-36-03-00-0003"
+  },
+  {
+    "case_number": "05-2026-CA-000004",
+    "county": "brevard",
+    "judgment_amount": 190000,
+    "market_value": 310000,
+    "plaintiff": "HOA",
+    "sale_date": "2026-04-01",
+    "status": "active",
+    "parcel_id": "25-36-04-00-0004"
+  },
+  {
+    "case_number": "05-2026-CA-000005",
+    "county": "brevard",
+    "judgment_amount": 200000,
+    "market_value": 325000,
+    "plaintiff": "Tax Collector",
+    "sale_date": "2026-04-01",
+    "status": "active",
+    "parcel_id": "25-36-05-00-0005"
+  },
+  {
+    "case_number": "05-2026-CA-000006",
+    "county": "brevard",
+    "judgment_amount": 210000,
+    "market_value": 340000,
+    "plaintiff": "Wells Fargo",
+    "sale_date": "2026-04-01",
+    "status": "active",
+    "parcel_id": "25-36-06-00-0006"
+  },
+  {
+    "case_number": "05-2026-CA-000007",
+    "county": "brevard",
+    "judgment_amount": 220000,
+    "market_value": 355000,
+    "plaintiff": "HOA",
+    "sale_date": "2026-04-01",
+    "status": "active",
+    "parcel_id": "25-36-07-00-0007"
+  },
+  {
+    "case_number": "05-2026-CA-000008",
+    "county": "brevard",
+    "judgment_amount": 230000,
+    "market_value": 370000,
+    "plaintiff": "Tax Collector",
+    "sale_date": "2026-04-01",
+    "status": "active",
+    "parcel_id": "25-36-08-00-0008"
+  },
+  {
+    "case_number": "05-2026-CA-000009",
+    "county": "brevard",
+    "judgment_amount": 240000,
+    "market_value": 385000,
+    "plaintiff": "Wells Fargo",
+    "sale_date": "2026-04-01",
+    "status": "active",
+    "parcel_id": "25-36-09-00-0009"
+  },
+  {
+    "case_number": "05-2026-CA-000010",
+    "county": "brevard",
+    "judgment_amount": 250000,
+    "market_value": 400000,
+    "plaintiff": "HOA",
+    "sale_date": "2026-04-01",
+    "status": "active",
+    "parcel_id": "25-36-10-00-0010"
+  },
+  {
+    "case_number": "05-2026-CA-000011",
+    "county": "brevard",
+    "judgment_amount": 260000,
+    "market_value": 415000,
+    "plaintiff": "Tax Collector",
+    "sale_date": "2026-04-01",
+    "status": "active",
+    "parcel_id": "25-36-11-00-0011"
+  },
+  {
+    "case_number": "05-2026-CA-000012",
+    "county": "brevard",
+    "judgment_amount": 270000,
+    "market_value": 430000,
+    "plaintiff": "Wells Fargo",
+    "sale_date": "2026-04-01",
+    "status": "active",
+    "parcel_id": "25-36-12-00-0012"
+  },
+  {
+    "case_number": "05-2026-CA-000013",
+    "county": "brevard",
+    "judgment_amount": 280000,
+    "market_value": 445000,
+    "plaintiff": "HOA",
+    "sale_date": "2026-04-01",
+    "status": "active",
+    "parcel_id": "25-36-13-00-0013"
+  },
+  {
+    "case_number": "05-2026-CA-000014",
+    "county": "brevard",
+    "judgment_amount": 290000,
+    "market_value": 460000,
+    "plaintiff": "Tax Collector",
+    "sale_date": "2026-04-01",
+    "status": "active",
+    "parcel_id": "25-36-14-00-0014"
+  },
+  {
+    "case_number": "05-2026-CA-000015",
+    "county": "brevard",
+    "judgment_amount": 300000,
+    "market_value": 475000,
+    "plaintiff": "Wells Fargo",
+    "sale_date": "2026-04-01",
+    "status": "active",
+    "parcel_id": "25-36-15-00-0015"
+  },
+  {
+    "case_number": "05-2026-CA-000016",
+    "county": "brevard",
+    "judgment_amount": 310000,
+    "market_value": 490000,
+    "plaintiff": "HOA",
+    "sale_date": "2026-04-01",
+    "status": "active",
+    "parcel_id": "25-36-16-00-0016"
+  },
+  {
+    "case_number": "05-2026-CA-000017",
+    "county": "brevard",
+    "judgment_amount": 320000,
+    "market_value": 505000,
+    "plaintiff": "Tax Collector",
+    "sale_date": "2026-04-01",
+    "status": "active",
+    "parcel_id": "25-36-17-00-0017"
+  },
+  {
+    "case_number": "05-2026-CA-000018",
+    "county": "brevard",
+    "judgment_amount": 330000,
+    "market_value": 520000,
+    "plaintiff": "Wells Fargo",
+    "sale_date": "2026-04-01",
+    "status": "active",
+    "parcel_id": "25-36-18-00-0018"
+  },
+  {
+    "case_number": "05-2026-CA-000019",
+    "county": "brevard",
+    "judgment_amount": 340000,
+    "market_value": 535000,
+    "plaintiff": "HOA",
+    "sale_date": "2026-04-01",
+    "status": "active",
+    "parcel_id": "25-36-19-00-0019"
+  },
+  {
+    "case_number": "05-2026-CA-000020",
+    "county": "brevard",
+    "judgment_amount": 350000,
+    "market_value": 550000,
+    "plaintiff": "Tax Collector",
+    "sale_date": "2026-04-01",
+    "status": "active",
+    "parcel_id": "25-36-20-00-0020"
+  },
+  {
+    "case_number": "05-2026-CA-000021",
+    "county": "brevard",
+    "judgment_amount": 360000,
+    "market_value": 565000,
+    "plaintiff": "Wells Fargo",
+    "sale_date": "2026-04-01",
+    "status": "active",
+    "parcel_id": "25-36-21-00-0021"
+  },
+  {
+    "case_number": "05-2026-CA-000022",
+    "county": "brevard",
+    "judgment_amount": 370000,
+    "market_value": 580000,
+    "plaintiff": "HOA",
+    "sale_date": "2026-04-01",
+    "status": "active",
+    "parcel_id": "25-36-22-00-0022"
+  },
+  {
+    "case_number": "05-2026-CA-000023",
+    "county": "brevard",
+    "judgment_amount": 380000,
+    "market_value": 595000,
+    "plaintiff": "Tax Collector",
+    "sale_date": "2026-04-01",
+    "status": "active",
+    "parcel_id": "25-36-23-00-0023"
+  },
+  {
+    "case_number": "05-2026-CA-000024",
+    "county": "brevard",
+    "judgment_amount": 390000,
+    "market_value": 610000,
+    "plaintiff": "Wells Fargo",
+    "sale_date": "2026-04-01",
+    "status": "active",
+    "parcel_id": "25-36-24-00-0024"
+  },
+  {
+    "case_number": "05-2026-CA-000025",
+    "county": "brevard",
+    "judgment_amount": 400000,
+    "market_value": 625000,
+    "plaintiff": "HOA",
+    "sale_date": "2026-04-01",
+    "status": "active",
+    "parcel_id": "25-36-25-00-0025"
+  },
+  {
+    "case_number": "05-2026-CA-000026",
+    "county": "brevard",
+    "judgment_amount": 410000,
+    "market_value": 640000,
+    "plaintiff": "Tax Collector",
+    "sale_date": "2026-04-01",
+    "status": "active",
+    "parcel_id": "25-36-26-00-0026"
+  },
+  {
+    "case_number": "05-2026-CA-000027",
+    "county": "brevard",
+    "judgment_amount": 420000,
+    "market_value": 655000,
+    "plaintiff": "Wells Fargo",
+    "sale_date": "2026-04-01",
+    "status": "active",
+    "parcel_id": "25-36-27-00-0027"
+  },
+  {
+    "case_number": "05-2026-CA-000028",
+    "county": "brevard",
+    "judgment_amount": 430000,
+    "market_value": 670000,
+    "plaintiff": "HOA",
+    "sale_date": "2026-04-01",
+    "status": "active",
+    "parcel_id": "25-36-28-00-0028"
+  },
+  {
+    "case_number": "05-2026-CA-000029",
+    "county": "brevard",
+    "judgment_amount": 440000,
+    "market_value": 685000,
+    "plaintiff": "Tax Collector",
+    "sale_date": "2026-04-01",
+    "status": "active",
+    "parcel_id": "25-36-29-00-0029"
+  },
+  {
+    "case_number": "05-2026-CA-000030",
+    "county": "brevard",
+    "judgment_amount": 450000,
+    "market_value": 700000,
+    "plaintiff": "Wells Fargo",
+    "sale_date": "2026-04-01",
+    "status": "active",
+    "parcel_id": "25-36-30-00-0030"
+  },
+  {
+    "case_number": "05-2026-CA-000031",
+    "county": "brevard",
+    "judgment_amount": 460000,
+    "market_value": 715000,
+    "plaintiff": "HOA",
+    "sale_date": "2026-04-01",
+    "status": "active",
+    "parcel_id": "25-36-31-00-0031"
+  },
+  {
+    "case_number": "05-2026-CA-000032",
+    "county": "brevard",
+    "judgment_amount": 470000,
+    "market_value": 730000,
+    "plaintiff": "Tax Collector",
+    "sale_date": "2026-04-01",
+    "status": "active",
+    "parcel_id": "25-36-32-00-0032"
+  },
+  {
+    "case_number": "05-2026-CA-000033",
+    "county": "brevard",
+    "judgment_amount": 480000,
+    "market_value": 745000,
+    "plaintiff": "Wells Fargo",
+    "sale_date": "2026-04-01",
+    "status": "active",
+    "parcel_id": "25-36-33-00-0033"
+  },
+  {
+    "case_number": "05-2026-CA-000034",
+    "county": "brevard",
+    "judgment_amount": 490000,
+    "market_value": 760000,
+    "plaintiff": "HOA",
+    "sale_date": "2026-04-01",
+    "status": "active",
+    "parcel_id": "25-36-34-00-0034"
+  },
+  {
+    "case_number": "05-2026-CA-000035",
+    "county": "brevard",
+    "judgment_amount": 500000,
+    "market_value": 775000,
+    "plaintiff": "Tax Collector",
+    "sale_date": "2026-04-01",
+    "status": "active",
+    "parcel_id": "25-36-35-00-0035"
+  },
+  {
+    "case_number": "05-2026-CA-000036",
+    "county": "brevard",
+    "judgment_amount": 510000,
+    "market_value": 790000,
+    "plaintiff": "Wells Fargo",
+    "sale_date": "2026-04-01",
+    "status": "active",
+    "parcel_id": "25-36-36-00-0036"
+  },
+  {
+    "case_number": "05-2026-CA-000037",
+    "county": "brevard",
+    "judgment_amount": 520000,
+    "market_value": 805000,
+    "plaintiff": "HOA",
+    "sale_date": "2026-04-01",
+    "status": "active",
+    "parcel_id": "25-36-37-00-0037"
+  },
+  {
+    "case_number": "05-2026-CA-000038",
+    "county": "brevard",
+    "judgment_amount": 530000,
+    "market_value": 820000,
+    "plaintiff": "Tax Collector",
+    "sale_date": "2026-04-01",
+    "status": "active",
+    "parcel_id": "25-36-38-00-0038"
+  },
+  {
+    "case_number": "05-2026-CA-000039",
+    "county": "brevard",
+    "judgment_amount": 540000,
+    "market_value": 835000,
+    "plaintiff": "Wells Fargo",
+    "sale_date": "2026-04-01",
+    "status": "active",
+    "parcel_id": "25-36-39-00-0039"
+  },
+  {
+    "case_number": "05-2026-CA-000040",
+    "county": "brevard",
+    "judgment_amount": 550000,
+    "market_value": 850000,
+    "plaintiff": "HOA",
+    "sale_date": "2026-04-01",
+    "status": "active",
+    "parcel_id": "25-36-40-00-0040"
+  },
+  {
+    "case_number": "05-2026-CA-000041",
+    "county": "brevard",
+    "judgment_amount": 560000,
+    "market_value": 865000,
+    "plaintiff": "Tax Collector",
+    "sale_date": "2026-04-01",
+    "status": "active",
+    "parcel_id": "25-36-41-00-0041"
+  },
+  {
+    "case_number": "05-2026-CA-000042",
+    "county": "brevard",
+    "judgment_amount": 570000,
+    "market_value": 880000,
+    "plaintiff": "Wells Fargo",
+    "sale_date": "2026-04-01",
+    "status": "active",
+    "parcel_id": "25-36-42-00-0042"
+  },
+  {
+    "case_number": "05-2026-CA-000043",
+    "county": "brevard",
+    "judgment_amount": 580000,
+    "market_value": 895000,
+    "plaintiff": "HOA",
+    "sale_date": "2026-04-01",
+    "status": "active",
+    "parcel_id": "25-36-43-00-0043"
+  },
+  {
+    "case_number": "05-2026-CA-000044",
+    "county": "brevard",
+    "judgment_amount": 590000,
+    "market_value": 910000,
+    "plaintiff": "Tax Collector",
+    "sale_date": "2026-04-01",
+    "status": "active",
+    "parcel_id": "25-36-44-00-0044"
+  },
+  {
+    "case_number": "05-2026-CA-000045",
+    "county": "brevard",
+    "judgment_amount": 600000,
+    "market_value": 925000,
+    "plaintiff": "Wells Fargo",
+    "sale_date": "2026-04-01",
+    "status": "active",
+    "parcel_id": "25-36-45-00-0045"
+  },
+  {
+    "case_number": "05-2026-CA-000046",
+    "county": "brevard",
+    "judgment_amount": 610000,
+    "market_value": 940000,
+    "plaintiff": "HOA",
+    "sale_date": "2026-04-01",
+    "status": "active",
+    "parcel_id": "25-36-46-00-0046"
+  },
+  {
+    "case_number": "05-2026-CA-000047",
+    "county": "brevard",
+    "judgment_amount": 620000,
+    "market_value": 955000,
+    "plaintiff": "Tax Collector",
+    "sale_date": "2026-04-01",
+    "status": "active",
+    "parcel_id": "25-36-47-00-0047"
+  },
+  {
+    "case_number": "05-2026-CA-000048",
+    "county": "brevard",
+    "judgment_amount": 630000,
+    "market_value": 970000,
+    "plaintiff": "Wells Fargo",
+    "sale_date": "2026-04-01",
+    "status": "active",
+    "parcel_id": "25-36-48-00-0048"
+  },
+  {
+    "case_number": "05-2026-CA-000049",
+    "county": "brevard",
+    "judgment_amount": 640000,
+    "market_value": 985000,
+    "plaintiff": "HOA",
+    "sale_date": "2026-04-01",
+    "status": "active",
+    "parcel_id": "25-36-49-00-0049"
+  }
+]
