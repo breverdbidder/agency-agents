@@ -1,72 +1,45 @@
-# CLAUDE.md — Agency-Agents Customization for BidDeed.AI & ZoneWise.AI
+# CLAUDE.md — BidDeed.AI / Everest Capital USA
 
-## Project Context
-This is a fork of `msitarzewski/agency-agents` (61 AI agent personas, MIT license).
-We are customizing these agents for two products:
+## Who I Am
+Ariel Shapira. Solo founder of BidDeed.AI and Everest Capital USA. 10+ years foreclosure investing in Brevard County, Florida. Licensed FL broker and general contractor. Building an AI-powered foreclosure auction intelligence platform. ADHD — I need systems that run themselves.
 
-1. **BidDeed.AI** — AI-powered foreclosure auction intelligence platform
-   - Stack: Supabase + Cloudflare Pages + Render + LiteLLM + LangGraph
-   - Data: 245K+ auction records across 46 Florida counties
-   - Pipeline: 12-stage (Discovery→Scraping→Title→Lien→Tax→Demographics→ML→MaxBid→Decision→Report→Disposition→Archive)
-   
-2. **ZoneWise.AI** — Zoning intelligence platform
-   - Stack: Supabase + Cloudflare Pages + Firecrawl + Gemini Flash + Claude
-   - Pipeline: 4-tier waterfall (Firecrawl→Gemini→Claude→Manual)
-   - Data: 67 Florida counties zoning data
+## My Stack
+- **Repos:** github.com/breverdbidder/* (cli-anything-biddeed, zonewise-scraper-v4, biddeed-ai, biddeed-ai-ui, zonewise-web, cliproxy-gateway, tax-insurance-optimizer)
+- **Database:** Supabase (mocerqjnksmhcjzxrewo.supabase.co) — multi_county_auctions (245K rows), activities, insights, daily_metrics
+- **Compute:** Hetzner everest-dispatch (87.99.129.125) with CLIProxyAPI on 127.0.0.1:8317
+- **AI:** Gemini Flash (FREE via CLIProxyAPI), DeepSeek V3.2 ($0.28/1M), Claude (Max plan, never API)
+- **Deploy:** GitHub Actions + Cloudflare Pages + Render
+- **Brand:** Navy #1E3A5F, Orange #F59E0B, Inter font, bg #020617
 
-## Owner
-- **Ariel Shapira** — Solo founder, Everest Capital USA
-- 10+ years foreclosure investing, FL broker + GC licenses
-- Dual timezone: FL (EST) / IL (IST)
+## Context Rules
 
-## Architecture
-- **GitHub**: breverdbidder (all repos)
-- **Supabase**: mocerqjnksmhcjzxrewo.supabase.co
-  - Tables: multi_county_auctions (245K rows), master_index, user_tiers, security_events, audit_log, daily_metrics
-  - 9 RLS policies, 3 functions, ESF deployed
-- **GitHub Actions**: Nightly scrape pipeline (11PM EST)
-- **Smart Router**: Multi-tier LLM routing (Sonnet/Flash/DeepSeek/cached)
-- **Brand**: Navy #1E3A5F, Orange #F59E0B, Inter font, bg #020617
+When I mention an auction or property → query Supabase `multi_county_auctions` first
+When I mention a case number → search `multi_county_auctions` by case_number field
+When analyzing a deal → apply max bid formula: (ARV×70%)-Repairs-$10K-MIN($25K,15%×ARV)
+When I ask about pipeline health → check `daily_metrics` and recent GitHub Action runs
+When I mention a county → check if config exists in `counties/` before assuming anything
+When something needs building → follow cli-anything HARNESS.md 7-phase pattern
+When deploying code → push to GitHub, never local installs or Google Drive
+When spending money → stop and confirm if >$10/session
+When I context-switch mid-task → flag it: "📌 [previous task] is still open"
+When I say "Summit" → execute immediately, no questions, no clarification
 
-## Team Structure (AI Agents)
-- Ariel (product owner, 20min/day oversight)
-- Claude AI Sonnet 4.5 (AI architect)
-- Claude Code (agentic engineer, 7hr sessions)
-- Traycer (QA via GitHub Issues)
-- Greptile (code indexing)
-- LangGraph (orchestration layer)
+## How I Work
+- Direct, no softening language. Facts and actions.
+- Cost discipline: $10/session max. Batch operations. One attempt per approach.
+- Zero HITL: try 3 alternatives before surfacing a blocker.
+- Execute first, report results. Don't ask what to do.
+- Push back with strong opinions when you disagree.
+- Wrong = "I was wrong." Never invent numbers.
 
-## Task: Customize 6 CRITICAL Agents
+## Slash Commands
+- `/auction-brief` — morning auction briefing from Supabase
+- `/county-setup` — onboard a new Florida county
+- `/deal-intel` — process foreclosure documents into structured data
+- `/tldr` — end-of-session summary, updates memory.md
+- `/transcript` — YouTube video analysis via Hetzner pipeline
 
-### Priority Order
-1. `specialized/agents-orchestrator.md` → LangGraph Pipeline Coordinator
-2. `engineering/engineering-autonomous-optimization-architect.md` → Smart Router Governor  
-3. `engineering/engineering-ai-engineer.md` → ML Score & Smart Router Agent
-4. `engineering/engineering-backend-architect.md` → Supabase Schema & API Agent
-5. `engineering/engineering-data-engineer.md` → Scraper Pipeline & ETL Agent
-6. `engineering/engineering-security-engineer.md` → ESF Security Auditor
-
-### Customization Rules
-- **PRESERVE** the original agent structure (Identity, Mission, Rules, Deliverables, Workflow, Metrics)
-- **REPLACE** generic examples with BidDeed/ZoneWise specific examples
-- **ADD** a `## BidDeed.AI / ZoneWise.AI Context` section at the top of each agent
-- **ADD** a `## Domain-Specific Rules` section with foreclosure/zoning specifics
-- **KEEP** the original content as fallback — our customizations EXTEND, not replace
-- Save customized agents to `customized/` directory (new folder)
-- Also keep originals untouched in their original locations
-
-### DO NOT
-- Delete any original agent files
-- Modify agents outside the 6 CRITICAL ones in this task
-- Remove MIT license or attribution
-- Change the repo structure for non-customized agents
-
-## Commit Convention
-- Prefix: `[agent-customize]`
-- Example: `[agent-customize] Agents Orchestrator → LangGraph Pipeline Coordinator`
-- Push after each agent customization (6 commits total)
-
-## GitHub Push
-- Remote: https://github.com/breverdbidder/agency-agents.git
-- Token: Set via `git remote set-url origin https://TOKEN@github.com/breverdbidder/agency-agents.git`
-- Branch: main
+## Family Context (when relevant)
+- Wife Mariam: runs Property360 real estate, Protection Partners insurance, contracting
+- Son Michael (16): D1 competitive swimmer, Satellite Beach HS, keto diet, Shabbat observance
+- Orthodox practices: Shabbat (no work Fri sunset–Sat havdalah), kosher, holidays
